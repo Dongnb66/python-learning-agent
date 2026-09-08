@@ -1,0 +1,74 @@
+[
+  {
+    "title": "Python 入门：变量、循环与函数",
+    "url": "https://docs.python.org/zh-cn/3/tutorial/",
+    "type": "doc",
+    "content": "Python 官方中文教程，覆盖变量定义、条件判断、for/while 循环、函数定义与返回值。适合零基础或基础薄弱的同学系统补齐编程基本功。建议配合动手写小练习。"
+  },
+  {
+    "title": "FastAPI 官方教程",
+    "url": "https://fastapi.tiangolo.com/zh/",
+    "type": "doc",
+    "content": "FastAPI 中文文档，讲解路径参数、请求体模型（Pydantic）、依赖注入、异步视图。是构建 AI 服务 API 的首选框架，求职 Agent 岗位高频要求。"
+  },
+  {
+    "title": "LangChain 中文文档：模型与提示",
+    "url": "https://python.langchain.com.cn/",
+    "type": "doc",
+    "content": "LangChain 中文站，介绍 ChatModel、PromptTemplate、输出解析。理解 Prompt 工程是落地大模型应用的第一步。"
+  },
+  {
+    "title": "LangGraph 多智能体编排入门",
+    "url": "https://langchain-ai.github.io/langgraph/",
+    "type": "doc",
+    "content": "LangGraph 文档，讲解用 StateGraph 把多个智能体串成有状态工作流，支持条件分支、循环与人工介入。是当前多智能体开发的主流框架。"
+  },
+  {
+    "title": "RAG 检索增强生成原理与实践",
+    "url": "https://python.langchain.com.cn/docs/modules/data_connection/",
+    "type": "article",
+    "content": "RAG 通过向量检索把相关资料塞进提示，约束模型基于事实回答，有效缓解幻觉。典型链路：文档切分 -> 向量化 -> 检索 -> 拼接上下文 -> 生成。"
+  },
+  {
+    "title": "SQLAlchemy 2.0 快速上手",
+    "url": "https://docs.sqlalchemy.org/en/20/",
+    "type": "doc",
+    "content": "SQLAlchemy 2.0 风格：DeclarativeBase、Mapped 类型注解、Session 上下文管理。用于把学生画像、学习记录持久化到数据库。"
+  },
+  {
+    "title": "Docker 容器化 Python 应用",
+    "url": "https://docs.docker.com/get-started/",
+    "type": "doc",
+    "content": "Docker 入门：镜像与容器、Dockerfile 多阶段构建、docker-compose 编排多服务。把 Agent 服务容器化是部署上线的必备技能。"
+  },
+  {
+    "title": "Prompt Engineering 指南",
+    "url": "https://www.promptingguide.ai/zh",
+    "type": "article",
+    "content": "系统讲解 Zero-shot / Few-shot、思维链（CoT）、角色设定等提示技巧，帮助让模型输出更稳定、更可控。"
+  },
+  {
+    "title": "数据结构与算法：数组、链表、哈希表",
+    "url": "https://leetcode.cn/leetbook/",
+    "type": "course",
+    "content": "LeetCode 精选题库，覆盖数组、链表、哈希表、二叉树等基础数据结构，是技术面试必刷内容。建议每天 1-2 题。"
+  },
+  {
+    "title": "计算机网络：HTTP/TCP 核心概念",
+    "url": "https://www.bilibili.com/video/BV1c4411d7jb",
+    "type": "video",
+    "content": "计算机网络速成课，讲清 TCP 三次握手、HTTP 与 HTTPS、DNS 解析。对理解 Web 服务与 API 调用很有帮助。"
+  },
+  {
+    "title": "数据库原理：SQL 与索引",
+    "url": "https://www.runoob.com/sql/sql-tutorial.html",
+    "type": "doc",
+    "content": "SQL 教程，覆盖 SELECT、JOIN、GROUP BY、索引与事务。理解关系型数据库是后端与数据岗的基本功。"
+  },
+  {
+    "title": "机器学习基础：回归与分类",
+    "url": "https://scikit-learn.org/stable/tutorial/basic/tutorial.html",
+    "type": "course",
+    "content": "scikit-learn 入门，介绍线性回归、逻辑回归、决策树与模型评估。为理解模型原理打基础，但求职 Agent 岗更看重工程落地。"
+  }
+]

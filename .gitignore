@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# 虚拟环境
+venv/
+.venv/
+env/
+
+# 环境变量与密钥
+.env
+
+# 数据库
+*.db
+*.sqlite
+*.sqlite3
+
+# 测试 / 缓存
+.pytest_cache/
+.cache/
+.mypy_cache/
+
+# IDE
+.idea/
+.vscode/
+
+# 本地推送辅助脚本（不上传）
+push-to-github.bat

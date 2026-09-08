@@ -1,0 +1,15 @@
+# 在线 Demo 部署依赖（HuggingFace Spaces / Render 自动 pip 安装）
+# 主项目运行时依赖
+fastapi>=0.115
+uvicorn[standard]>=0.32
+pydantic>=2.9
+pydantic-settings>=2.6
+sqlalchemy>=2.0
+langchain>=0.3
+langgraph>=0.2
+langchain-openai>=0.2
+langchain-community>=0.3
+rank-bm25>=0.2.2
+python-dotenv>=1.0
+# Demo 界面
+gradio>=4.40
