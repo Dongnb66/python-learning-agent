@@ -42,7 +42,7 @@
   `review` 后接**条件边**——有薄弱项才进辅导循环，没有则直接收尾（该确定的地方确定，该自主的地方自主）
 - **Provider 可换**：默认 DeepSeek（OpenAI 兼容协议），改 3 行配置即可切到 OpenAI / Claude / 通义千问 / 百炼 MaaS
 - **类型安全**：Pydantic + 类型注解 + FastAPI 自动 OpenAPI 文档
-- **可测试 + 可评测**：46 条单测全程不调用真实 LLM（mock / 脚本化假模型），无需 API Key；
+- **可测试 + 可评测**：64 条单测全程不调用真实 LLM（mock / 脚本化假模型），无需 API Key；
   另含**防幻觉评测集**（`eval/bad_cases.json` + `scripts/run_eval.py`）——6 类用例 / 4 类断言，
   量化「编造链接数 = 0、来源可验证率 100%」，可挂 CI 做回归
 - **Docker 一键起**：`docker-compose up`
@@ -111,6 +111,34 @@ docker-compose up
 ```
 
 打开 http://localhost:8000/docs 查看交互式 API 文档。
+
+> **关于 `.env`**：由 `app/config.py` 在导入时统一加载，并且**同时注入 `os.environ`**。
+> 本项目里 JWT 密钥、腾讯云短信、SMTP、微信/QQ 开放平台都是用 `os.getenv` 读的，
+> 而 pydantic-settings 只把 `.env` 读进自己的 `Settings` 对象、不会写环境变量 ——
+> 不显式注入的话这些配置写在 `.env` 里等于没配（详见下方「修复的真 bug」）。
+> 已存在的 shell 环境变量优先，便于部署时覆盖。
+
+### 修复的真 bug：`.env` 里的配置其实大半读不到
+
+排查时发现 `.env.example` 里 27 个配置项，只有交给 pydantic `Settings` 的那几个
+（`LLM_*` / `DATABASE_URL` / `APP_*`）真正生效，其余走 `os.getenv` 的**全部读不到**，
+而且不会有任何报错：
+
+| 配置 | 修复前的实际表现 |
+|------|------------------|
+| `LLM_API_KEY` | `app.py`（一键 Gradio 演示）判 `USE_MOCK = not bool(os.getenv("LLM_API_KEY"))` → 永远 `True`，**Demo 一直跑 mock 假数据** |
+| `TENCENTCLOUD_*` | 短信永远走「演示模式」，不真实下发 |
+| `WECHAT_*` / `QQ_*` | 第三方登录永远 mock 扫码 |
+| `SMTP_*` | 邮箱验证码永远走演示模式 |
+| `JWT_SECRET` | 模块级快照没拿到 → 每次启动随机生成，**重启后登录态全失效** |
+
+已实测复现：`get_settings().llm_api_key` 有值，同一进程 `os.getenv("LLM_API_KEY")` 为 `None`。
+
+修法（两道保险）：
+1. `app/config.py` 新增 `load_env_file()` 并在**导入时**调用，把 `.env` 注入 `os.environ`；`env_file` 也改为**锚定项目根的绝对路径**，换目录启动不再失效。
+2. `app/auth.py` 的 `JWT_SECRET` 与 `app.py` 的模式判断改为**调用时取值**（`_jwt_secret()` / `llm_configured()`），导入顺序再变也不会退化；占位符 Key 统一由 `config.has_usable_llm_key()` 识别，`tutor_agent` 复用同一实现，避免两套规则漂移。
+
+回归断言在 `tests/test_env_loading.py`（18 条，含「`.env` 必须真的进 `os.environ`」「shell 变量优先」「JWT_SECRET 读时取值且签名/校验一致」）。
 
 ## API 端点
 
@@ -182,7 +210,7 @@ pytest -q
 - `tests/test_eval_suite.py`：**评测器自检**（判定逻辑单测 + 离线跑完全部评测用例）
 - `tests/test_tencent_sms.py`：TC3-HMAC-SHA256 签名对照腾讯云官方公开测试向量校验
 
-共 **46 passed**。测试全程不调用真实 LLM（LLM 全部 mock 或用脚本化假模型），无需 API Key。
+共 **64 passed**。测试全程不调用真实 LLM（LLM 全部 mock 或用脚本化假模型），无需 API Key。
 
 ## 评测（防幻觉评测集）
 
@@ -227,7 +255,7 @@ python-learning-agent/
 │   ├── graph.py           # LangGraph 状态图：load_memory→profile→planner→resource→quiz→review→(条件边)tutor→save_memory
 │   ├── tools.py           # Agent 工具层：4 个只读工具（RAG 检索/读画像/读学情/统计会话），零 LLM 依赖
 │   ├── models.py          # Pydantic 模型：Profile / Plan / Resource / Quiz / Review / TutorSession / AgentState
-│   ├── config.py          # pydantic-settings 读取 .env
+│   ├── config.py          # 配置层：pydantic-settings 读 .env + 注入 os.environ
 │   ├── llm.py             # ChatOpenAI 封装 + function calling 结构化输出（支持 MOCK_LLM 开关）
 │   ├── mock_llm.py        # 离线桩：无 Key 也能跑通全流程（资源取自真实语料）
 │   ├── eval_suite.py      # 防幻觉评测逻辑：用例载入 / 断言判定 / 指标汇总 / 报告落盘
@@ -276,7 +304,7 @@ python-learning-agent/
 - [x] 跨会话三层记忆
 - [x] 自主辅导 Agent（ReAct 工具调用循环）
 - [x] 防幻觉评测集 + 评测 CLI（离线可跑）
-- [x] pytest 46 passed（mock LLM）+ Docker
+- [x] pytest 64 passed（mock LLM）+ Docker
 - [ ] 前端（复用 A3 React 版）
 - [ ] 在线 demo 部署
 - [ ] 演示视频

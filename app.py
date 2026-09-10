@@ -13,10 +13,15 @@ import os
 
 import gradio as gr
 
+from app.config import llm_configured  # 导入即把 .env 注入 os.environ
+
 import mock_llm
 
-# 没有 API Key 就走 mock，保证 Spaces 零配置可跑
-USE_MOCK = not bool(os.getenv("LLM_API_KEY"))
+# 没有可用的 API Key 就走 mock，保证 Spaces 零配置可跑。
+# 判断必须走 llm_configured()：它同时看 os.environ 与 .env，并能识别占位符 Key。
+# 此前写成 `not bool(os.getenv("LLM_API_KEY"))` —— os.environ 里拿不到 .env 的值，
+# 于是「.env 里配了真实 Key」也会被判成 mock，Demo 永远跑假数据且无任何提示。
+USE_MOCK = not llm_configured()
 if USE_MOCK:
     mock_llm.install()
 
@@ -150,4 +155,6 @@ with gr.Blocks(title="个性化学习多智能体系统 · Demo", theme=gr.theme
     )
 
 if __name__ == "__main__":
-    demo.launch(server_name="0.0.0.0", server_port=int(os.getenv("PORT", "7860")))
+    # 优先 PORT（HuggingFace Spaces / Render 注入），其次 .env 里的 APP_PORT
+    _port = int(os.getenv("PORT") or os.getenv("APP_PORT") or "7860")
+    demo.launch(server_name="0.0.0.0", server_port=_port)

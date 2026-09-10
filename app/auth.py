@@ -26,7 +26,15 @@ ACCESS_TTL_SEC = 900  # access 15 分钟
 VERIFY_TTL_MS = 5 * 60 * 1000  # 验证码 5 分钟
 
 # 未配置 JWT_SECRET 时用随机密钥，避免硬编码默认值被伪造（重启后旧 token 失效）
-JWT_SECRET = os.getenv("JWT_SECRET") or secrets.token_hex(32)
+# 注意：这里**不在模块顶层做 os.getenv 快照** —— 模块级读取会固化成
+# 「导入这一刻的环境变量」，一旦导入发生在 .env 注入之前，.env 里配的
+# JWT_SECRET 就永远生效不了（重启后登录态照样失效，且没有任何提示）。
+_JWT_SECRET_FALLBACK = secrets.token_hex(32)
+
+
+def _jwt_secret() -> str:
+    """JWT 签名密钥（调用时读取，未配置则使用进程级随机密钥）。"""
+    return (os.getenv("JWT_SECRET") or "").strip() or _JWT_SECRET_FALLBACK
 
 AVATARS = ["🎓", "📚", "🧠", "🚀", "🌱", "🔍", "💡", "🛠️"]
 
@@ -103,14 +111,14 @@ def sign_jwt(payload: dict, ttl_sec: int = ACCESS_TTL_SEC) -> str:
     head = _b64url(json.dumps({"alg": "HS256", "typ": "JWT"}, separators=(",", ":")).encode())
     body_b64 = _b64url(json.dumps(body, separators=(",", ":"), ensure_ascii=False).encode())
     signing_input = f"{head}.{body_b64}".encode()
-    sig = hmac.new(JWT_SECRET.encode(), signing_input, hashlib.sha256).digest()
+    sig = hmac.new(_jwt_secret().encode(), signing_input, hashlib.sha256).digest()
     return f"{head}.{body_b64}.{_b64url(sig)}"
 
 
 def verify_jwt(token: str) -> dict | None:
     try:
         head, body_b64, sig = token.split(".")
-        expected = _b64url(hmac.new(JWT_SECRET.encode(), f"{head}.{body_b64}".encode(), hashlib.sha256).digest())
+        expected = _b64url(hmac.new(_jwt_secret().encode(), f"{head}.{body_b64}".encode(), hashlib.sha256).digest())
         if not hmac.compare_digest(expected, sig):
             return None
         payload = json.loads(_b64url_decode(body_b64))

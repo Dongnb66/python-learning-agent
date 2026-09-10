@@ -39,6 +39,7 @@ from typing import Any
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 
 from app.agents._common import to_lc_messages
+from app import config
 from app.config import get_settings
 from app.models import AgentState, TutorSession, ToolCallRecord
 from app.tools import TOOL_REGISTRY
@@ -49,21 +50,15 @@ MAX_ROUNDS = 4
 # 这些工具的用户标识必须以服务端状态为准，不信任模型自填的参数
 _USER_SCOPED_TOOLS = {"get_student_profile", "get_last_session", "count_history_sessions"}
 
-# 明显是占位符的 Key，视为「未配置」，避免每次白跑一次注定 401 的请求
-_PLACEHOLDER_MARKERS = ("your", "xxx", "placeholder", "change", "example", "todo", "none")
+# 明显是占位符的 Key，视为「未配置」，避免每次白跑一次注定 401 的请求。
+# 实现已收敛到配置层（app.config.has_usable_llm_key），这里只做转发，
+# 避免「两处各一套占位符规则、改一处漏一处」。
+_PLACEHOLDER_MARKERS = config._PLACEHOLDER_MARKERS
 
 
 def _has_usable_key(api_key: str | None) -> bool:
-    """判断是否配置了「看起来可用」的 LLM Key。
-
-    本地 / Demo 环境常见 `sk-your-api-key-here` 这类占位符，
-    若当成真 Key 去调用，每轮都会白等一次网络超时再降级——不如提前识别。
-    """
-    key = (api_key or "").strip()
-    if not key:
-        return False
-    low = key.lower()
-    return not any(marker in low for marker in _PLACEHOLDER_MARKERS)
+    """判断是否配置了「看起来可用」的 LLM Key（见 app.config.has_usable_llm_key）。"""
+    return config.has_usable_llm_key(api_key)
 
 _SYSTEM = """你是「自主辅导智能体」，负责在学生完成一轮学习后，主动排查他真正卡在哪里。
 
