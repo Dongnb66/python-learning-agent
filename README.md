@@ -8,6 +8,7 @@
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.115+-009688?logo=fastapi&logoColor=white)
 ![LangGraph](https://img.shields.io/badge/LangGraph-multi--agent-7F77DD)
 ![License](https://img.shields.io/badge/License-MIT-green)
+![Tests](https://github.com/Dongnb66/python-learning-agent/actions/workflows/ci.yml/badge.svg)
 
 ## 这是什么
 
