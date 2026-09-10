@@ -49,6 +49,18 @@ def get_retriever(k: int = 4) -> BM25Retriever:
     return _retriever
 
 
-def retrieve(query: str, k: int = 4) -> list[Document]:
-    """返回与 query 最相关的 k 个资料片段。"""
-    return get_retriever(k=k).invoke(query)
+def retrieve(query: str, k: int = 4, min_score: float = 0.0) -> list[Document]:
+    """返回与 query 最相关的 k 个资料片段（按 BM25 分数降序）。
+
+    min_score：相关性下限，默认 0.0。
+        BM25 分数为 0 表示「query 的词一个都没在语料里命中」——这类结果
+        只是凑数的，并不相关。BM25Retriever 原生行为是无论如何都返回
+        top-k（含 0 分项），若直接把它们当作 LLM 的「事实依据」，等于
+        给模型塞了一堆无关材料，反而助推它编造。
+        因此这里做显式分数过滤：资料库确实没有相关内容时返回空列表，
+        上层即可据此**在代码层拒答**，而不是指望模型自觉。
+    """
+    r = get_retriever(k=k)
+    scores = r.vectorizer.get_scores(r.preprocess_func(query))
+    ranked = sorted(zip(scores, r.docs), key=lambda pair: pair[0], reverse=True)
+    return [doc for score, doc in ranked[:k] if score > min_score]

@@ -27,7 +27,7 @@
    - **Space 可见性**：Public（方便放简历链接）
 3. 创建后进入 Space 页面 → **Files** 标签页：
    - 方式 A（最简单）：把本仓库这些文件/目录**全部上传**到 Space 根目录：
-     `app.py`、`mock_llm.py`、`requirements.txt`、`app/`（整个目录，含 `data/resources.json`）
+     `app.py`、`requirements.txt`、`app/`（整个目录，含 `mock_llm.py` 与 `data/resources.json`）
    - 方式 B（用 GitHub 同步）：Space 设置里选 **Import from GitHub**，指向你 fork/推送了本 demo 的仓库。
 4. 等待构建（约 1–3 分钟）。构建完成后页面会给出一个 `https://xxx.hf.space` 的公网链接。
 5. 把这个链接写进简历「项目经历」第 1 项的末尾，例如：
@@ -76,7 +76,7 @@ python app.py
 | 文件 | 作用 |
 |---|---|
 | `app.py` | Gradio 演示界面，HuggingFace 会自动识别 |
-| `mock_llm.py` | Mock LLM 层，无 Key 时让流程跑通（含真实资料链接） |
+| `app/mock_llm.py` | Mock LLM 层，无 Key 时让流程跑通（资源取自真实语料）。根目录 `mock_llm.py` 为兼容 shim，供 `app.py` 沿用旧导入路径 |
 | `requirements.txt` | 部署依赖（主项目依赖 + gradio） |
 | `app/` | 真实多智能体系统源码（被 demo 直接 import 复用） |
 

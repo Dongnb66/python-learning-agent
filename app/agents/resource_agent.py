@@ -1,11 +1,16 @@
 """ResourceAgent —— RAG 增强的个性化资源推荐（防幻觉核心）。
 
-流程：
-1. 从学习计划每一步提取检索词；
-2. 用 BM25 在本地资料库检索真实存在的资料片段；
-3. 把这些「事实依据」连同计划一起交给 LLM，让它只从检索结果中精选 2~3 条推荐。
+防幻觉不是「在 prompt 里叮嘱模型别编」，而是**代码层的三道硬约束**：
 
-由于 LLM 只能看到检索到的真实资料，无法凭空编造链接，从而抑制幻觉。
+1. **检索层留真**：BM25 带相关性阈值（`min_score`），只保留真正命中的资料；
+   资料库没有相关内容时就返回空，绝不拿 0 分项凑数。
+2. **代码级拒答**：检索结果为空 → 直接返回空资源列表，**根本不调用模型**。
+   没有事实依据就不生成——这是机制，不是期望。
+3. **白名单兜底**：模型返回的每一条，其 URL 必须来自本轮检索到的候选集
+   （或标题能对上资料库），否则一律丢弃；只给了标题的会被归一化成
+   资料库里的真实 URL。**模型就算幻觉，也过不了这一关。**
+
+三层都过了，返回的每一条链接都能在本地资料库里找到出处。
 """
 from __future__ import annotations
 
@@ -27,26 +32,48 @@ _RESOURCE_SYSTEM = """你是「学习资源推荐智能体」。
 _K = 4
 
 
-def build_resources_node(state: AgentState) -> dict:
-    chat = get_structured_model(ResourceList, temperature=0.2)
-    plan: Plan = state.get("plan")
-    plan_text = plan.model_dump_json(ensure_ascii=False) if plan else "（暂无计划）"
-
-    # 以计划标题/描述为检索词，拼接去重后的真实片段
+def _collect_context(plan: Plan | None) -> tuple[str, dict[str, str]]:
+    """按计划步骤逐一检索，返回 (给模型的资料全文, {标题: URL} 白名单)。"""
     queries = [step.title for step in (plan.steps if plan else [])]
     seen: set[str] = set()
-    ctx_parts: list[str] = []
+    parts: list[str] = []
+    allowed: dict[str, str] = {}  # title -> url，即本轮「可推荐白名单」
     for q in queries:
         for doc in retrieve(q, k=_K):
-            key = doc.metadata.get("title", "")
-            if key and key not in seen:
-                seen.add(key)
-                ctx_parts.append(
-                    f"[{doc.metadata.get('type','')}] {doc.metadata.get('title','')} "
-                    f"({doc.metadata.get('url','')})\n{doc.page_content}"
+            title = doc.metadata.get("title", "")
+            if title and title not in seen:
+                seen.add(title)
+                allowed[title] = doc.metadata.get("url", "")
+                parts.append(
+                    f"[{doc.metadata.get('type', '')}] {title} "
+                    f"({doc.metadata.get('url', '')})\n{doc.page_content}"
                 )
-    context = "\n\n".join(ctx_parts) if ctx_parts else "（资料库为空）"
+    return "\n\n".join(parts), allowed
 
+
+def _enforce_whitelist(items: list[ResourceItem], allowed: dict[str, str]) -> list[ResourceItem]:
+    """只放行有真实出处的条目；缺 URL 但标题能对上的，补成资料库真实 URL。"""
+    allowed_urls = set(allowed.values())
+    kept: list[ResourceItem] = []
+    for it in items:
+        if it.url and it.url in allowed_urls:
+            kept.append(it)
+        elif it.title and it.title in allowed:
+            kept.append(it.model_copy(update={"url": allowed[it.title]}))
+    return kept
+
+
+def build_resources_node(state: AgentState) -> dict:
+    plan: Plan = state.get("plan")
+
+    # 第 1 步：只从本地资料库检索真实资料（带相关性阈值）
+    context, allowed = _collect_context(plan)
+
+    # 第 2 步：资料库确实没有相关内容 → 代码级拒答，不调用模型、不编造
+    if not context:
+        return {"resources": []}
+
+    plan_text = plan.model_dump_json(ensure_ascii=False) if plan else "（暂无计划）"
     messages = (
         [SystemMessage(content=_RESOURCE_SYSTEM)]
         + to_lc_messages(state["messages"])
@@ -57,5 +84,7 @@ def build_resources_node(state: AgentState) -> dict:
             )
         ]
     )
-    result: ResourceList = chat.invoke(messages)
-    return {"resources": result.items}
+    result: ResourceList = get_structured_model(ResourceList, temperature=0.2).invoke(messages)
+
+    # 第 3 步：白名单过滤——模型幻觉出的链接在此被剔除
+    return {"resources": _enforce_whitelist(result.items, allowed)}

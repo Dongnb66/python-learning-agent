@@ -24,6 +24,9 @@ env/
 .cache/
 .mypy_cache/
 
+# 评测报告（每次运行生成，带时间戳）
+eval/report_*.json
+
 # IDE
 .idea/
 .vscode/

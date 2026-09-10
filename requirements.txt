@@ -13,3 +13,5 @@ rank-bm25>=0.2.2
 python-dotenv>=1.0
 # Demo 界面
 gradio>=4.40
+# 评测脚本 / 测试（FastAPI TestClient 依赖）
+httpx>=0.27

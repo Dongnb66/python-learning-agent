@@ -26,7 +26,13 @@
 
 - **对话式画像构建（ProfileAgent）**：从对话抽取 6 维画像 —— 知识基础 / 学习目标 / 认知风格 / 薄弱点 / 资源偏好 / 学习时间；并用正则**高置信提取姓名 / 专业**覆盖 LLM 结果
 - **学习计划（PlannerAgent）**：基于画像生成循序渐进的学习路径（含每步耗时）
-- **资源推荐（ResourceAgent）· RAG 防幻觉**：先用 BM25 在本地资料库检索真实资料，LLM **只能基于检索到的真实链接**做推荐，从机制上抑制编造资源 / 链接的幻觉
+- **资源推荐（ResourceAgent）· RAG 防幻觉（三道代码级硬约束）**：不是"在 prompt 里叮嘱模型别编"，
+  而是把「不编造」做成**代码不变量**——
+  ① **检索层留真**：BM25 带相关性阈值，无命中就返回空，绝不拿 0 分项凑数；
+  ② **代码级拒答**：检索为空 → 直接返回空资源，**根本不调用模型**（没有事实依据就不生成）；
+  ③ **白名单兜底**：模型返回的每一条，URL 必须能在本轮检索候选里对上（或标题能对上资料库），
+  否则一律剔除；只给标题的会被归一化成资料库真实 URL。**模型就算幻觉，也过不了这一关。**
+  已用 `tests/test_resource_guard.py` 确定性证明
 - **自测题（QuizAgent）+ 学情复盘（ReviewAgent）**：闭环学习反馈
 - **自主辅导（TutorAgent）· ReAct 工具调用循环**：复盘出薄弱项后，模型**自主决定**去查什么——
   可调用 4 个只读工具（检索真实资料 / 读长期画像 / 读上次学情 / 统计历史会话数），
@@ -36,7 +42,9 @@
   `review` 后接**条件边**——有薄弱项才进辅导循环，没有则直接收尾（该确定的地方确定，该自主的地方自主）
 - **Provider 可换**：默认 DeepSeek（OpenAI 兼容协议），改 3 行配置即可切到 OpenAI / Claude / 通义千问 / 百炼 MaaS
 - **类型安全**：Pydantic + 类型注解 + FastAPI 自动 OpenAPI 文档
-- **可测试**：全部 LLM 调用可 mock，测试无需 API Key 即可跑通
+- **可测试 + 可评测**：46 条单测全程不调用真实 LLM（mock / 脚本化假模型），无需 API Key；
+  另含**防幻觉评测集**（`eval/bad_cases.json` + `scripts/run_eval.py`）——6 类用例 / 4 类断言，
+  量化「编造链接数 = 0、来源可验证率 100%」，可挂 CI 做回归
 - **Docker 一键起**：`docker-compose up`
 
 ## 架构
@@ -59,6 +67,8 @@ flowchart TD
     T --> SM
     SM --> DB2[(SQLite<br/>profiles + learning_sessions)]
     C <-.检索真实资料.-> KB[(BM25 本地资料库)]
+    C -.无命中.-> RC[代码级拒答<br/>返回空资源·不调模型]
+    C -.白名单过滤.-> WL[剔除资料库外的链接]
     A --> DB[(SQLite 画像库)]
     WF --> LLM[DeepSeek / OpenAI 兼容端点]
     T --> LLM
@@ -67,6 +77,8 @@ flowchart TD
 > 图中 `WF` 是**确定性工作流**（执行路径由代码固定，保证教学路径可复现）；
 > `TutorAgent` 是**自主 Agent**（调什么工具、调几轮、何时停由模型运行时决定）。
 > 两者刻意并存：该确定的地方确定，该自主的地方自主。
+>
+> `ResourceAgent` 的三道防幻觉约束（拒答 / 白名单）都在**代码层**，不依赖模型自觉。
 
 ## 技术栈
 
@@ -166,9 +178,45 @@ pytest -q
 - `tests/test_memory.py`：**跨会话记忆**（上次学情读回 / 多次会话累积取最近 / 记忆故障不阻塞主流程）
 - `tests/test_tutor_agent.py`：**自主辅导 Agent**（ReAct 循环：真实执行工具 / 自主停止 / 轮数上限 /
   越权防护 / 模型异常降级 / 占位符 Key 识别 / 条件边分支）
+- `tests/test_resource_guard.py`：**防幻觉三道硬约束**（无命中返回空 / 检索为空不调模型 / 白名单剔除编造链接）
+- `tests/test_eval_suite.py`：**评测器自检**（判定逻辑单测 + 离线跑完全部评测用例）
 - `tests/test_tencent_sms.py`：TC3-HMAC-SHA256 签名对照腾讯云官方公开测试向量校验
 
-共 **30 passed**。测试全程不调用真实 LLM（LLM 全部 mock 或用脚本化假模型），无需 API Key。
+共 **46 passed**。测试全程不调用真实 LLM（LLM 全部 mock 或用脚本化假模型），无需 API Key。
+
+## 评测（防幻觉评测集）
+
+「我的 RAG 能防幻觉」是一句无法验证的话。所以这里把它拆成**可判定的断言**：
+
+```bash
+python scripts/run_eval.py          # 零配置：无 Key 自动走离线桩，进程内跑完，无需起服务
+```
+
+它会跑 `eval/bad_cases.json` 里的 6 类用例（正常学生 / 姓名专业提取 / 薄弱点 / 冷门话题 /
+目标明确 / 极简输入），对整条管线做 4 类断言：
+
+| 断言 | 含义 |
+|---|---|
+| 产物齐全 | profile / plan / resources / quiz / review 五类都在 |
+| **防幻觉命中率** | 每条推荐 URL 都必须能在本地资料库找到出处，**编造链接数必须为 0** |
+| 拒答正确性 | 资料库无对应话题时，resources 应为空（正确拒答），而不是编造几条凑数 |
+| 画像准确度 | 姓名 / 专业由正则层保底提取 |
+
+输出控制台报告 + `eval/report_<时间戳>.json`（含防幻觉命中率），退出码非 0 即失败，可直接挂 CI。
+
+```bash
+# 对接真实模型（在 .env 配好 Key 后），额外验证「模型在约束下是否真的不编造」
+python scripts/run_eval.py
+
+# 对已启动的服务做端到端评测
+uvicorn app.main:app --port 8000
+python scripts/run_eval.py --base http://localhost:8000
+```
+
+当前结果：**6/6 通过，推荐 24 条资源，编造链接 0 条，防幻觉命中率 100%**。
+
+> 注：`拒答` 分支在离线桩模式下无法通过端到端管线触达（桩的学习计划固定，检索总能命中）。
+> 该分支由 `tests/test_resource_guard.py` 用确定性单测覆盖——**检索为空 → 返回空资源且模型零调用**。
 
 ## 项目结构
 
@@ -180,18 +228,24 @@ python-learning-agent/
 │   ├── tools.py           # Agent 工具层：4 个只读工具（RAG 检索/读画像/读学情/统计会话），零 LLM 依赖
 │   ├── models.py          # Pydantic 模型：Profile / Plan / Resource / Quiz / Review / TutorSession / AgentState
 │   ├── config.py          # pydantic-settings 读取 .env
-│   ├── llm.py             # ChatOpenAI 封装 + function calling 结构化输出
-│   ├── rag.py             # BM25 检索（防幻觉）
+│   ├── llm.py             # ChatOpenAI 封装 + function calling 结构化输出（支持 MOCK_LLM 开关）
+│   ├── mock_llm.py        # 离线桩：无 Key 也能跑通全流程（资源取自真实语料）
+│   ├── eval_suite.py      # 防幻觉评测逻辑：用例载入 / 断言判定 / 指标汇总 / 报告落盘
+│   ├── rag.py             # BM25 检索（防幻觉，带相关性阈值，无命中返回空）
 │   ├── db.py              # SQLAlchemy + SQLite：profiles 长期画像 + learning_sessions 学情轨迹
 │   ├── agents/
 │   │   ├── profile_agent.py    # 6 维画像抽取 + 姓名/专业正则
 │   │   ├── planner_agent.py    # 学习计划
-│   │   ├── resource_agent.py   # RAG 资源推荐
+│   │   ├── resource_agent.py   # RAG 资源推荐（拒答 + 白名单双重约束）
 │   │   ├── quiz_agent.py       # 自测题
 │   │   ├── review_agent.py     # 学情复盘
 │   │   ├── memory_agent.py     # 跨会话记忆读写（纯 IO，故障隔离）
 │   │   └── tutor_agent.py      # 自主辅导 Agent（ReAct 工具调用循环 + 条件边路由）
 │   └── data/resources.json     # 本地资料库（RAG 语料）
+├── eval/
+│   └── bad_cases.json     # 防幻觉评测集（6 类用例 + 断言）
+├── scripts/
+│   └── run_eval.py        # 评测 CLI（零配置，进程内跑完整管线）
 ├── tests/                 # pytest（mock LLM，无需 key）
 ├── Dockerfile
 ├── docker-compose.yml
@@ -206,9 +260,10 @@ python-learning-agent/
 |---|---|---|
 | 智能体设计 | ✓ 5 个 agent | ✓ 翻译保留 + 新增自主辅导 Agent |
 | 6 维画像抽取 | ✓ | ✓ 逻辑对齐 + 姓名/专业正则 |
-| RAG 防幻觉 | ✓ | ✓ BM25 检索约束资源推荐 |
+| RAG 防幻觉 | ✓ | ✓ 代码级三道约束（阈值检索 / 空命中拒答 / URL 白名单） |
 | 跨会话记忆 | × | ✓ 三层记忆（AgentState / profiles / learning_sessions） |
 | 自主决策 | × | ✓ ReAct 工具调用循环（LLM 自决调什么工具、调几轮、何时停） |
+| 效果评测 | × | ✓ 防幻觉评测集（6 用例 / 4 类断言 / JSON 报告 / 可挂 CI） |
 | 工程化 | Express + React | FastAPI + 可选前端 |
 | Agent 框架 | 自写 orchestrator | **LangGraph**（含条件边） |
 | Docker 部署 | × | ✓ |
@@ -216,9 +271,12 @@ python-learning-agent/
 ## Roadmap
 
 - [x] 5 个智能体 + LangGraph 状态图
-- [x] RAG 防幻觉资源推荐
+- [x] RAG 防幻觉资源推荐（三道代码级约束）
 - [x] FastAPI 端点 + SQLite 持久化
-- [x] pytest（mock LLM）+ Docker
+- [x] 跨会话三层记忆
+- [x] 自主辅导 Agent（ReAct 工具调用循环）
+- [x] 防幻觉评测集 + 评测 CLI（离线可跑）
+- [x] pytest 46 passed（mock LLM）+ Docker
 - [ ] 前端（复用 A3 React 版）
 - [ ] 在线 demo 部署
 - [ ] 演示视频

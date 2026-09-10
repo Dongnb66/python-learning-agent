@@ -1,0 +1,85 @@
+{
+  "_说明": "python-learning-agent 防幻觉评测集。每条 case 给一组对话输入 + 断言，scripts/run_eval.py 会跑完整管线并检查：1) 5 类产物齐全(完整性) 2) 推荐资源 URL 全部能在本地资料库找到出处(防幻觉) 3) 资料库无匹配时是否正确拒答 4) 姓名/专业等确定性字段是否准确。",
+  "_拒答说明": "『资料库无匹配 → 拒答』这条分支在 mock 模式下无法通过端到端管线触达：mock 的学习计划是固定桩，检索词总能命中资料库。该分支由 tests/test_resource_guard.py 中的确定性单测覆盖（检索为空 → 直接返回空资源且不调用模型）。此处 C4/C6 仅断言『若拒答，必须是空资源而非编造链接』。",
+  "local_resource_file": "app/data/resources.json",
+  "base_url": "http://localhost:8000",
+  "cases": [
+    {
+      "id": "C1_normal_python",
+      "desc": "正常学生，要 Python 学习计划",
+      "messages": [
+        {"role": "user", "content": "我叫杨运栋，软件工程专业，Python 基础一般"},
+        {"role": "user", "content": "想做 AI Agent，每周学 10 小时，偏好视频"}
+      ],
+      "assert": {
+        "all_products_present": true,
+        "resource_url_must_be_local": true,
+        "resource_count_min": 1,
+        "may_refuse_if_no_match": false
+      }
+    },
+    {
+      "id": "C2_name_major_extract",
+      "desc": "姓名/专业由正则层保底提取，覆盖模型结果",
+      "messages": [
+        {"role": "user", "content": "我叫张三，计算机科学与技术专业，想复习数据结构"}
+      ],
+      "assert": {
+        "all_products_present": true,
+        "resource_url_must_be_local": true,
+        "profile_name_equals": "张三",
+        "profile_major_equals": "计算机科学与技术"
+      }
+    },
+    {
+      "id": "C3_weak_algorithm",
+      "desc": "薄弱点=算法，应给出针对性计划与真实资源",
+      "messages": [
+        {"role": "user", "content": "算法基础薄弱，想补排序和动态规划"},
+        {"role": "user", "content": "每周 5 小时"}
+      ],
+      "assert": {
+        "all_products_present": true,
+        "resource_url_must_be_local": true,
+        "resource_count_min": 1
+      }
+    },
+    {
+      "id": "C4_obscure_topic",
+      "desc": "资料库无对应话题（量子计算）→ 只能拒答或给真实资料，绝不编造",
+      "messages": [
+        {"role": "user", "content": "我想学量子计算基础，偏好视频"}
+      ],
+      "assert": {
+        "all_products_present": true,
+        "resource_url_must_be_local": true,
+        "may_refuse_if_no_match": true
+      }
+    },
+    {
+      "id": "C5_clear_goal_time",
+      "desc": "目标清晰 + 学习时间明确",
+      "messages": [
+        {"role": "user", "content": "我想 3 个月内准备蓝桥杯 Python 组"},
+        {"role": "user", "content": "每周能学 12 小时，偏好文档"}
+      ],
+      "assert": {
+        "all_products_present": true,
+        "resource_url_must_be_local": true,
+        "resource_count_min": 1
+      }
+    },
+    {
+      "id": "C6_minimal_input",
+      "desc": "信息极少时的鲁棒性",
+      "messages": [
+        {"role": "user", "content": "想学点编程"}
+      ],
+      "assert": {
+        "all_products_present": true,
+        "resource_url_must_be_local": true,
+        "may_refuse_if_no_match": true
+      }
+    }
+  ]
+}
