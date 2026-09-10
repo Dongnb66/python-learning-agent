@@ -95,6 +95,28 @@ class Review(BaseModel):
     strengths: List[str] = Field(default_factory=list)
     gaps: List[str] = Field(default_factory=list)
     suggestions: List[str] = Field(default_factory=list)
+    comparison: str = Field(
+        default="",
+        description="与上一次学习会话的纵向对比（新学员首轮为空字符串）",
+    )
+
+
+class LearningSession(BaseModel):
+    """一次学习会话的学情快照——跨会话记忆的持久化单元。
+
+    每次走完完整管线，ReviewAgent 的复盘结论会被存成一条 session。
+    下次同一 user_id 再来时，load_memory 节点把它读出来喂给复盘智能体，
+    从而产出「上次 vs 本次」的纵向对比。
+    """
+
+    id: Optional[int] = None
+    user_id: str = ""
+    created_at: str = ""
+    goal: str = ""
+    mastery: str = ""
+    strengths: List[str] = Field(default_factory=list)
+    gaps: List[str] = Field(default_factory=list)
+    suggestions: List[str] = Field(default_factory=list)
 
 
 # --------------------------------------------------------------------------- #
@@ -108,6 +130,9 @@ class AgentState(TypedDict, total=False):
     resources: List[ResourceItem]
     quiz: Optional[Quiz]
     review: Optional[Review]
+    # ---- 跨会话记忆 ----
+    memory: Optional[LearningSession]  # 上一次会话的学情（load_memory 载入）
+    memory_hits: int  # 该用户历史会话总数，0 表示新学员
     errors: List[str]
 
 

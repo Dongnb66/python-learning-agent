@@ -4,11 +4,11 @@
 """
 from __future__ import annotations
 
-from sqlalchemy import Engine, create_engine, select
+from sqlalchemy import Engine, create_engine, desc, func, select
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
 
 from app.config import get_settings
-from app.models import Dimension, Profile
+from app.models import Dimension, LearningSession, Profile
 
 
 class Base(DeclarativeBase):
@@ -56,6 +56,50 @@ class ProfileRecord(Base):
         )
 
 
+class SessionRecord(Base):
+    """学情轨迹表：每条记录是一次完整学习会话的复盘结论。
+
+    与 profiles 表（长期画像）配合，构成跨会话记忆的两层持久化：
+    - profiles        → 长期画像（这个学生是谁）
+    - learning_sessions → 学情轨迹（这个学生历次学得怎么样）
+    """
+
+    __tablename__ = "learning_sessions"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    user_id: Mapped[str] = mapped_column(index=True)
+    created_at: Mapped[str] = mapped_column(default="")
+    goal: Mapped[str] = mapped_column(default="")
+    mastery: Mapped[str] = mapped_column(default="")
+    strengths: Mapped[str] = mapped_column(default="")
+    gaps: Mapped[str] = mapped_column(default="")
+    suggestions: Mapped[str] = mapped_column(default="")
+    raw_json: Mapped[str] = mapped_column(default="")
+
+    def to_session(self) -> LearningSession:
+        import json
+
+        def _lst(raw: str) -> list[str]:
+            if not raw:
+                return []
+            try:
+                v = json.loads(raw)
+                return v if isinstance(v, list) else [str(v)]
+            except Exception:
+                return [raw]
+
+        return LearningSession(
+            id=self.id,
+            user_id=self.user_id,
+            created_at=self.created_at,
+            goal=self.goal,
+            mastery=self.mastery,
+            strengths=_lst(self.strengths),
+            gaps=_lst(self.gaps),
+            suggestions=_lst(self.suggestions),
+        )
+
+
 def get_engine() -> Engine:
     s = get_settings()
     return create_engine(s.database_url, future=True)
@@ -95,3 +139,64 @@ def load_profile(user_id: str) -> Profile | None:
     with Session(engine) as session:
         rec = session.scalar(select(ProfileRecord).where(ProfileRecord.user_id == user_id))
         return rec.to_profile() if rec else None
+
+
+# --------------------------------------------------------------------------- #
+# 学情轨迹（跨会话记忆的第二层）
+# --------------------------------------------------------------------------- #
+def save_session(user_id: str, review, goal: str = "") -> int:
+    """把一次会话的复盘结论写入学情轨迹表，返回新记录 id。"""
+    import json
+    from datetime import datetime, timezone
+
+    engine = get_engine()
+    with Session(engine) as session:
+        rec = SessionRecord(
+            user_id=user_id,
+            created_at=datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            goal=goal or "",
+            mastery=getattr(review, "mastery", "") or "",
+            strengths=json.dumps(
+                list(getattr(review, "strengths", []) or []), ensure_ascii=False
+            ),
+            gaps=json.dumps(list(getattr(review, "gaps", []) or []), ensure_ascii=False),
+            suggestions=json.dumps(
+                list(getattr(review, "suggestions", []) or []), ensure_ascii=False
+            ),
+            raw_json=(
+                review.model_dump_json(ensure_ascii=False)
+                if hasattr(review, "model_dump_json")
+                else ""
+            ),
+        )
+        session.add(rec)
+        session.commit()
+        session.refresh(rec)
+        return rec.id
+
+
+def load_last_session(user_id: str) -> LearningSession | None:
+    """读取该用户最近一次学情快照；没有历史则返回 None（新学员）。"""
+    engine = get_engine()
+    with Session(engine) as session:
+        rec = session.scalar(
+            select(SessionRecord)
+            .where(SessionRecord.user_id == user_id)
+            .order_by(desc(SessionRecord.id))
+            .limit(1)
+        )
+        return rec.to_session() if rec else None
+
+
+def count_sessions(user_id: str) -> int:
+    """统计该用户历史会话数（0 = 新学员）。"""
+    engine = get_engine()
+    with Session(engine) as session:
+        return (
+            session.scalar(
+                select(func.count())
+                .select_from(SessionRecord)
+                .where(SessionRecord.user_id == user_id)
+            )
+            or 0
+        )
