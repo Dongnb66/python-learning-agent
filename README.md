@@ -110,7 +110,12 @@ uvicorn app.main:app --reload --port 8000
 docker-compose up
 ```
 
-打开 http://localhost:8000/docs 查看交互式 API 文档。
+启动成功后，在浏览器打开 `http://localhost:8000/docs` 查看交互式 API 文档。
+
+> ⚠️ **`localhost` 是你自己电脑上的地址** —— 本项目**没有部署线上 Demo**，
+> 在 GitHub 页面里直接点这个链接是打不开的（它只会去连**点击者自己**的 8000 端口）。
+> 想看效果请按上面的命令在本地跑起来：克隆 → `pip install -e .` → `uvicorn app.main:app`，
+> 全程 3 条命令，**不需要任何 API Key**（不配 Key 自动走离线演示模式）。
 
 > **关于 `.env`**：由 `app/config.py` 在导入时统一加载，并且**同时注入 `os.environ`**。
 > 本项目里 JWT 密钥、腾讯云短信、SMTP、微信/QQ 开放平台都是用 `os.getenv` 读的，
