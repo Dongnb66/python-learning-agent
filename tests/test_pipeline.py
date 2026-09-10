@@ -1,14 +1,21 @@
 """端到端多智能体管线测试。
 
-把 5 个智能体的 LLM 全部 mock 掉，跑完整张 LangGraph，
-验证「画像 → 计划 → 资源(RAG) → 测验 → 复盘」能产出全部产物。
-注意：ResourceAgent 的 BM25 检索走真实本地语料，不依赖网络。
+把 LLM 全部 mock 掉，跑完整张 LangGraph，
+验证「画像 → 计划 → 资源(RAG) → 测验 → 复盘 →（条件边）自主辅导」能产出全部产物。
+注意：
+- ResourceAgent 的 BM25 检索走真实本地语料，不依赖网络；
+- 辅导节点强制 TUTOR_MODE=policy（规则策略），避免单测触发真实模型调用；
+- 数据库切到临时文件，不污染项目库。
 """
 from __future__ import annotations
 
 import contextlib
 from unittest.mock import MagicMock, patch
 
+import pytest
+from sqlalchemy import create_engine
+
+from app import db
 from app.graph import build_graph
 from app.models import (
     Dimension,
@@ -22,6 +29,19 @@ from app.models import (
     ResourceList,
     Review,
 )
+
+
+@pytest.fixture()
+def tmp_db(monkeypatch, tmp_path):
+    engine = create_engine(f"sqlite:///{tmp_path / 'pipeline_test.db'}", future=True)
+    monkeypatch.setattr(db, "get_engine", lambda: engine)
+    db.init_db()
+    return engine
+
+
+@pytest.fixture()
+def policy_mode(monkeypatch):
+    monkeypatch.setenv("TUTOR_MODE", "policy")
 
 
 def _fake_profile() -> Profile:
@@ -100,7 +120,7 @@ def _mock_all_llms():
         yield
 
 
-def test_full_pipeline_produces_all_artifacts():
+def test_full_pipeline_produces_all_artifacts(tmp_db, policy_mode):
     with _mock_all_llms():
         graph = build_graph()
         state = {
@@ -129,3 +149,9 @@ def test_full_pipeline_produces_all_artifacts():
 
     assert final["review"] is not None
     assert final["review"].suggestions
+
+    # 复盘给出了薄弱项（算法薄弱）→ 条件边应走到自主辅导节点
+    assert final.get("tutoring") is not None, "有薄弱项时必须触发自主辅导"
+    assert final["tutoring"].tools_used, "辅导节点必须真实调用工具"
+    assert final["tutoring"].trace, "必须留下可审计的决策轨迹"
+    assert final.get("agent_trace") == final["tutoring"].trace

@@ -113,6 +113,7 @@ def api_learn(req: LearnRequest) -> LearnResponse:
         resources=final.get("resources", []),
         quiz=final.get("quiz"),
         review=final.get("review"),
+        tutoring=final.get("tutoring"),
         errors=final.get("errors", []),
     )
 

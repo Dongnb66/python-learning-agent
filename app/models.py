@@ -120,6 +120,33 @@ class LearningSession(BaseModel):
 
 
 # --------------------------------------------------------------------------- #
+# 自主辅导智能体（ReAct）产物
+# --------------------------------------------------------------------------- #
+class ToolCallRecord(BaseModel):
+    """一轮工具调用的审计记录 —— 自主决策轨迹的可复核证据。"""
+
+    round: int = Field(default=0, description="第几轮循环（从 1 开始）")
+    tool: str = Field(default="", description="被调用的工具名")
+    args: str = Field(default="", description="工具入参（JSON 文本）")
+    observation: str = Field(default="", description="工具返回的观察结果摘要")
+
+
+class TutorSession(BaseModel):
+    """自主辅导智能体一次运行的完整结果。
+
+    trace 是「自主决策」的可审计证据：面试/复现时可直接看到
+    模型在第几轮、调了哪个工具、观察到了什么、何时决定停止。
+    """
+
+    question: str = Field(default="", description="触发本次辅导的诊断问题")
+    answer: str = Field(default="", description="综合工具观察后给出的辅导结论")
+    tools_used: List[str] = Field(default_factory=list, description="本轮实际调用过的工具名（去重保序）")
+    rounds: int = Field(default=0, description="实际执行的 ReAct 循环轮数")
+    mode: str = Field(default="llm", description="llm = 真实模型驱动；policy = 无 Key 时的规则策略兜底")
+    trace: List[ToolCallRecord] = Field(default_factory=list, description="逐轮工具调用轨迹")
+
+
+# --------------------------------------------------------------------------- #
 # LangGraph 共享状态
 # --------------------------------------------------------------------------- #
 class AgentState(TypedDict, total=False):
@@ -134,6 +161,9 @@ class AgentState(TypedDict, total=False):
     memory: Optional[LearningSession]  # 上一次会话的学情（load_memory 载入）
     memory_hits: int  # 该用户历史会话总数，0 表示新学员
     errors: List[str]
+    # ---- 自主辅导智能体（ReAct）----
+    tutoring: Optional[TutorSession]  # 自主工具调用循环的产物
+    agent_trace: List[ToolCallRecord]  # 自主决策轨迹（可审计）
 
 
 # --------------------------------------------------------------------------- #
@@ -156,4 +186,7 @@ class LearnResponse(BaseModel):
     resources: List[ResourceItem] = Field(default_factory=list)
     quiz: Optional[Quiz] = None
     review: Optional[Review] = None
+    tutoring: Optional[TutorSession] = Field(
+        default=None, description="自主辅导智能体（ReAct）的结论与决策轨迹"
+    )
     errors: List[str] = Field(default_factory=list)

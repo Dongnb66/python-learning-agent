@@ -11,9 +11,11 @@ English | **[中文](README.md)**
 
 ## What it is
 
-A student tells the system — in **natural language** — their major, learning goals, weak points, available study time, and more. The system then runs **5 LangGraph-orchestrated agents** in a closed loop:
+A student tells the system — in **natural language** — their major, learning goals, weak points, available study time, and more. The system then runs a **LangGraph-orchestrated pipeline** in a closed loop:
 
-**Extract a 6-dimension learning profile → generate a personalized plan → recommend real resources via RAG → create a self-test → produce a study review.**
+**Load memory → extract a 6-dimension profile → generate a personalized plan → recommend real resources via RAG → create a self-test → produce a study review → (conditional edge) run an autonomous tutoring loop → save memory.**
+
+`load_memory / save_memory` give the system cross-session memory (with a "last time vs. this time" comparison), while `tutor` is a **ReAct-style autonomous agent** — which tools to call, how many rounds, and when to stop are all decided by the model at runtime.
 
 This is a Python migration of the A3 Node.js project: **business logic kept 1:1, tech stack switched to what AI-Agent roles actually ask for** (Python · LangGraph · FastAPI · RAG · SQLAlchemy · Docker).
 
@@ -23,7 +25,8 @@ This is a Python migration of the A3 Node.js project: **business logic kept 1:1,
 - **Planning (PlannerAgent)**: builds a progressive learning path (with per-step time estimates) from the profile
 - **Resource recommendation (ResourceAgent) · RAG anti-hallucination**: retrieves real materials with BM25 first; the LLM **may only recommend from retrieved, real links**, suppressing fabricated resources at the mechanism level
 - **Self-test (QuizAgent) + review (ReviewAgent)**: closed-loop learning feedback
-- **LangGraph orchestration**: a 7-node state graph `load_memory → profile → planner → resource → quiz → review → save_memory` (5 LLM agents + 2 pure-IO memory nodes); each node is independently debuggable and replaceable
+- **Autonomous tutoring (TutorAgent) · ReAct tool-calling loop**: once the review surfaces weak points, the model **decides for itself** what to look up — 4 read-only tools (RAG retrieval / read profile / read last session / count sessions), looping through *decide → act → observe → decide again* until it has enough, capped at 4 rounds. Every decision and observation is recorded as an auditable `trace`. Falls back to a rule policy when no key is configured or the model errors out
+- **LangGraph orchestration**: state graph `load_memory → profile → planner → resource → quiz → review → tutor → save_memory`, with a **conditional edge** after `review` — the tutoring loop only runs when weak points exist. (Deterministic where it should be, autonomous where it must be)
 - **Swappable provider**: DeepSeek by default (OpenAI-compatible); switch to OpenAI / Claude / Qwen / Bailian MaaS by editing 3 lines
 - **Type-safe**: Pydantic + type hints + auto-generated OpenAPI docs
 - **Testable**: all LLM calls are mockable — the test suite runs with no API key
@@ -121,19 +124,23 @@ Both repos share the same business design; this repo is the Python rewrite:
 
 | Dimension | A3 Node.js | Python (this repo) |
 |---|---|---|
-| Agent design | ✓ 5 agents | ✓ ported |
+| Agent design | ✓ 5 agents | ✓ ported + autonomous tutor agent |
 | 6-dim profiling | ✓ | ✓ aligned + name/major regex |
 | RAG anti-hallucination | ✓ | ✓ BM25-constrained recommendation |
+| Cross-session memory | × | ✓ 3-layer (AgentState / profiles / learning_sessions) |
+| Autonomous decisions | × | ✓ ReAct tool-calling loop |
 | Engineering | Express + React | FastAPI + optional frontend |
-| Agent framework | hand-rolled orchestrator | **LangGraph** |
+| Agent framework | hand-rolled orchestrator | **LangGraph** (with conditional edges) |
 | Docker deployment | × | ✓ |
 
 ## Roadmap
 
 - [x] 5 agents + LangGraph state graph
+- [x] Cross-session 3-layer memory
+- [x] Autonomous tutoring agent (ReAct loop with tools)
 - [x] RAG anti-hallucination resource recommendation
 - [x] FastAPI endpoints + SQLite persistence
-- [x] pytest (mocked LLM) + Docker
+- [x] pytest 30 passed (mocked LLM, no API key needed) + Docker
 - [ ] Frontend (reuse the A3 React app)
 - [ ] Hosted online demo
 - [ ] Demo video

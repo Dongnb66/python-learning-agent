@@ -13,12 +13,14 @@
 ## 这是什么
 
 学生用**自然语言对话**告诉系统自己的专业、学习目标、薄弱点、可用时间等信息，
-系统用 **LangGraph 编排的 7 节点状态图**自动完成闭环：
+系统用 **LangGraph 编排的状态图**自动完成闭环：
 
-**load_memory（读取上次学情）→ 抽取 6 维学习画像 → 生成个性化学习计划 → 基于 RAG 推荐真实学习资源 → 出自测题 → 学情复盘 → save_memory（沉淀本次学情）。**
-（其中 `load_memory / save_memory` 两个记忆节点让系统能跨会话记住学生，做"上次 vs 本次"纵向对比。）
+**load_memory（读取上次学情）→ 抽取 6 维学习画像 → 生成个性化学习计划 → 基于 RAG 推荐真实学习资源 → 出自测题 → 学情复盘 →（条件边：有薄弱项则进入自主辅导）→ save_memory（沉淀本次学情）。**
 
-这是 A3（Node.js 版）的 Python 迁移版：**业务逻辑对齐，技术栈换成 AI Agent 岗位主流栈**（Python · LangGraph · FastAPI · SQLAlchemy · Docker），并加入三层记忆（短期上下文 AgentState / 长期画像 profiles / 学情轨迹 learning_sessions）与 RAG 防幻觉强化。
+其中 `load_memory / save_memory` 两个记忆节点让系统能跨会话记住学生，做"上次 vs 本次"纵向对比；
+`tutor`（自主辅导）节点是一个 **ReAct 式自主决策 Agent**——调哪些工具、调几轮、何时停止由模型在运行时自己决定。
+
+这是 A3（Node.js 版）的 Python 迁移版：**业务逻辑对齐，技术栈换成 AI Agent 岗位主流栈**（Python · LangGraph · FastAPI · SQLAlchemy · Docker），并加入三层记忆（短期上下文 AgentState / 长期画像 profiles / 学情轨迹 learning_sessions）、RAG 防幻觉强化，以及自主工具调用循环。
 
 ## 核心特性
 
@@ -26,7 +28,12 @@
 - **学习计划（PlannerAgent）**：基于画像生成循序渐进的学习路径（含每步耗时）
 - **资源推荐（ResourceAgent）· RAG 防幻觉**：先用 BM25 在本地资料库检索真实资料，LLM **只能基于检索到的真实链接**做推荐，从机制上抑制编造资源 / 链接的幻觉
 - **自测题（QuizAgent）+ 学情复盘（ReviewAgent）**：闭环学习反馈
-- **LangGraph 编排**：7 节点状态图 `load_memory → profile → planner → resource → quiz → review → save_memory`（5 个 LLM 智能体 + 2 个纯 IO 记忆节点），每个节点可单独调试、可独立替换
+- **自主辅导（TutorAgent）· ReAct 工具调用循环**：复盘出薄弱项后，模型**自主决定**去查什么——
+  可调用 4 个只读工具（检索真实资料 / 读长期画像 / 读上次学情 / 统计历史会话数），
+  按「决策 → 调工具 → 观察 → 再决策」循环直到信息足够，最多 4 轮防失控；
+  **每轮决策与观察都留成可审计的 `trace`**。无 Key 或模型异常时自动降级规则策略，管线不中断
+- **LangGraph 编排**：状态图 `load_memory → profile → planner → resource → quiz → review → tutor → save_memory`，
+  `review` 后接**条件边**——有薄弱项才进辅导循环，没有则直接收尾（该确定的地方确定，该自主的地方自主）
 - **Provider 可换**：默认 DeepSeek（OpenAI 兼容协议），改 3 行配置即可切到 OpenAI / Claude / 通义千问 / 百炼 MaaS
 - **类型安全**：Pydantic + 类型注解 + FastAPI 自动 OpenAPI 文档
 - **可测试**：全部 LLM 调用可 mock，测试无需 API Key 即可跑通
@@ -38,7 +45,7 @@
 flowchart TD
     User[学生自然语言对话] --> API[FastAPI 入口]
     API --> SG[LangGraph 状态图]
-    subgraph WF[多智能体工作流]
+    subgraph WF[确定性工作流 Workflow]
         direction LR
         A[ProfileAgent<br/>6 维画像抽取] --> B[PlannerAgent<br/>学习路径规划]
         B --> C[ResourceAgent<br/>RAG 资源推荐]
@@ -46,10 +53,20 @@ flowchart TD
         D --> E[ReviewAgent<br/>学情复盘]
     end
     SG --> WF
+    E -->|条件边：有薄弱项| T[TutorAgent<br/>自主辅导 ReAct 循环]
+    E -->|无薄弱项| SM[save_memory]
+    T -.自主调用.-> TOOLS[4 个只读工具<br/>检索 / 读画像 / 读学情 / 统计会话]
+    T --> SM
+    SM --> DB2[(SQLite<br/>profiles + learning_sessions)]
     C <-.检索真实资料.-> KB[(BM25 本地资料库)]
     A --> DB[(SQLite 画像库)]
     WF --> LLM[DeepSeek / OpenAI 兼容端点]
+    T --> LLM
 ```
+
+> 图中 `WF` 是**确定性工作流**（执行路径由代码固定，保证教学路径可复现）；
+> `TutorAgent` 是**自主 Agent**（调什么工具、调几轮、何时停由模型运行时决定）。
+> 两者刻意并存：该确定的地方确定，该自主的地方自主。
 
 ## 技术栈
 
@@ -145,11 +162,13 @@ pytest -q
 ```
 
 - `tests/test_profile.py`：画像抽取 + 姓名/专业正则（mock LLM）
-- `tests/test_pipeline.py`：**端到端多智能体管线**（mock 全部 5 个 LLM，验证完整流程产出全部产物）
+- `tests/test_pipeline.py`：**端到端多智能体管线**（mock 全部 LLM，验证完整流程产出全部产物 + 条件边触发自主辅导）
 - `tests/test_memory.py`：**跨会话记忆**（上次学情读回 / 多次会话累积取最近 / 记忆故障不阻塞主流程）
+- `tests/test_tutor_agent.py`：**自主辅导 Agent**（ReAct 循环：真实执行工具 / 自主停止 / 轮数上限 /
+  越权防护 / 模型异常降级 / 占位符 Key 识别 / 条件边分支）
 - `tests/test_tencent_sms.py`：TC3-HMAC-SHA256 签名对照腾讯云官方公开测试向量校验
 
-共 **13 passed**（5 画像 + 4 TC3 官方向量 + 3 跨会话记忆 + 1 端到端管线）。测试全程不调用真实 LLM，无需 API Key。
+共 **30 passed**。测试全程不调用真实 LLM（LLM 全部 mock 或用脚本化假模型），无需 API Key。
 
 ## 项目结构
 
@@ -157,8 +176,9 @@ pytest -q
 python-learning-agent/
 ├── app/
 │   ├── main.py            # FastAPI 入口（/api/learn、/api/profile/build …）
-│   ├── graph.py           # LangGraph 状态图：load_memory→profile→planner→resource→quiz→review→save_memory
-│   ├── models.py          # Pydantic 模型：Profile / Plan / Resource / Quiz / Review / AgentState
+│   ├── graph.py           # LangGraph 状态图：load_memory→profile→planner→resource→quiz→review→(条件边)tutor→save_memory
+│   ├── tools.py           # Agent 工具层：4 个只读工具（RAG 检索/读画像/读学情/统计会话），零 LLM 依赖
+│   ├── models.py          # Pydantic 模型：Profile / Plan / Resource / Quiz / Review / TutorSession / AgentState
 │   ├── config.py          # pydantic-settings 读取 .env
 │   ├── llm.py             # ChatOpenAI 封装 + function calling 结构化输出
 │   ├── rag.py             # BM25 检索（防幻觉）
@@ -168,7 +188,9 @@ python-learning-agent/
 │   │   ├── planner_agent.py    # 学习计划
 │   │   ├── resource_agent.py   # RAG 资源推荐
 │   │   ├── quiz_agent.py       # 自测题
-│   │   └── review_agent.py     # 学情复盘
+│   │   ├── review_agent.py     # 学情复盘
+│   │   ├── memory_agent.py     # 跨会话记忆读写（纯 IO，故障隔离）
+│   │   └── tutor_agent.py      # 自主辅导 Agent（ReAct 工具调用循环 + 条件边路由）
 │   └── data/resources.json     # 本地资料库（RAG 语料）
 ├── tests/                 # pytest（mock LLM，无需 key）
 ├── Dockerfile
@@ -182,11 +204,13 @@ python-learning-agent/
 
 | 维度 | A3 Node 版 | Python 版（本仓库） |
 |---|---|---|
-| 智能体设计 | ✓ 5 个 agent | ✓ 翻译保留 |
+| 智能体设计 | ✓ 5 个 agent | ✓ 翻译保留 + 新增自主辅导 Agent |
 | 6 维画像抽取 | ✓ | ✓ 逻辑对齐 + 姓名/专业正则 |
 | RAG 防幻觉 | ✓ | ✓ BM25 检索约束资源推荐 |
+| 跨会话记忆 | × | ✓ 三层记忆（AgentState / profiles / learning_sessions） |
+| 自主决策 | × | ✓ ReAct 工具调用循环（LLM 自决调什么工具、调几轮、何时停） |
 | 工程化 | Express + React | FastAPI + 可选前端 |
-| Agent 框架 | 自写 orchestrator | **LangGraph** |
+| Agent 框架 | 自写 orchestrator | **LangGraph**（含条件边） |
 | Docker 部署 | × | ✓ |
 
 ## Roadmap
