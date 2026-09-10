@@ -23,7 +23,7 @@ This is a Python migration of the A3 Node.js project: **business logic kept 1:1,
 - **Planning (PlannerAgent)**: builds a progressive learning path (with per-step time estimates) from the profile
 - **Resource recommendation (ResourceAgent) · RAG anti-hallucination**: retrieves real materials with BM25 first; the LLM **may only recommend from retrieved, real links**, suppressing fabricated resources at the mechanism level
 - **Self-test (QuizAgent) + review (ReviewAgent)**: closed-loop learning feedback
-- **LangGraph orchestration**: a stateful `profile → planner → resource → quiz → review` workflow; each agent is independently debuggable and replaceable
+- **LangGraph orchestration**: a 7-node state graph `load_memory → profile → planner → resource → quiz → review → save_memory` (5 LLM agents + 2 pure-IO memory nodes); each node is independently debuggable and replaceable
 - **Swappable provider**: DeepSeek by default (OpenAI-compatible); switch to OpenAI / Claude / Qwen / Bailian MaaS by editing 3 lines
 - **Type-safe**: Pydantic + type hints + auto-generated OpenAPI docs
 - **Testable**: all LLM calls are mockable — the test suite runs with no API key

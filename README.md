@@ -14,10 +14,10 @@
 学生用**自然语言对话**告诉系统自己的专业、学习目标、薄弱点、可用时间等信息，
 系统用 **LangGraph 编排的 7 节点状态图**自动完成闭环：
 
-**抽取 6 维学习画像 → 读取记忆 → 生成个性化学习计划 → 基于 RAG 推荐真实学习资源 → 出自测题 → 学情复盘 → 沉淀记忆。**
+**load_memory（读取上次学情）→ 抽取 6 维学习画像 → 生成个性化学习计划 → 基于 RAG 推荐真实学习资源 → 出自测题 → 学情复盘 → save_memory（沉淀本次学情）。**
 （其中 `load_memory / save_memory` 两个记忆节点让系统能跨会话记住学生，做"上次 vs 本次"纵向对比。）
 
-这是 A3（Node.js 版）的 Python 迁移版：**业务逻辑对齐，技术栈换成 AI Agent 岗位主流栈**（Python · LangGraph · FastAPI · SQLAlchemy · Docker），并加入三层记忆与 RAG 防幻觉强化。
+这是 A3（Node.js 版）的 Python 迁移版：**业务逻辑对齐，技术栈换成 AI Agent 岗位主流栈**（Python · LangGraph · FastAPI · SQLAlchemy · Docker），并加入三层记忆（短期上下文 AgentState / 长期画像 profiles / 学情轨迹 learning_sessions）与 RAG 防幻觉强化。
 
 ## 核心特性
 
@@ -25,7 +25,7 @@
 - **学习计划（PlannerAgent）**：基于画像生成循序渐进的学习路径（含每步耗时）
 - **资源推荐（ResourceAgent）· RAG 防幻觉**：先用 BM25 在本地资料库检索真实资料，LLM **只能基于检索到的真实链接**做推荐，从机制上抑制编造资源 / 链接的幻觉
 - **自测题（QuizAgent）+ 学情复盘（ReviewAgent）**：闭环学习反馈
-- **LangGraph 编排**：5 个智能体串成 `profile → planner → resource → quiz → review` 有状态工作流，可单独调试、可独立替换
+- **LangGraph 编排**：7 节点状态图 `load_memory → profile → planner → resource → quiz → review → save_memory`（5 个 LLM 智能体 + 2 个纯 IO 记忆节点），每个节点可单独调试、可独立替换
 - **Provider 可换**：默认 DeepSeek（OpenAI 兼容协议），改 3 行配置即可切到 OpenAI / Claude / 通义千问 / 百炼 MaaS
 - **类型安全**：Pydantic + 类型注解 + FastAPI 自动 OpenAPI 文档
 - **可测试**：全部 LLM 调用可 mock，测试无需 API Key 即可跑通
@@ -145,8 +145,10 @@ pytest -q
 
 - `tests/test_profile.py`：画像抽取 + 姓名/专业正则（mock LLM）
 - `tests/test_pipeline.py`：**端到端多智能体管线**（mock 全部 5 个 LLM，验证完整流程产出全部产物）
+- `tests/test_memory.py`：**跨会话记忆**（上次学情读回 / 多次会话累积取最近 / 记忆故障不阻塞主流程）
+- `tests/test_tencent_sms.py`：TC3-HMAC-SHA256 签名对照腾讯云官方公开测试向量校验
 
-测试全程不调用真实 LLM，无需 API Key。
+共 **13 passed**（5 画像 + 4 TC3 官方向量 + 3 跨会话记忆 + 1 端到端管线）。测试全程不调用真实 LLM，无需 API Key。
 
 ## 项目结构
 
@@ -154,12 +156,12 @@ pytest -q
 python-learning-agent/
 ├── app/
 │   ├── main.py            # FastAPI 入口（/api/learn、/api/profile/build …）
-│   ├── graph.py           # LangGraph 状态图：profile→planner→resource→quiz→review
+│   ├── graph.py           # LangGraph 状态图：load_memory→profile→planner→resource→quiz→review→save_memory
 │   ├── models.py          # Pydantic 模型：Profile / Plan / Resource / Quiz / Review / AgentState
 │   ├── config.py          # pydantic-settings 读取 .env
 │   ├── llm.py             # ChatOpenAI 封装 + function calling 结构化输出
 │   ├── rag.py             # BM25 检索（防幻觉）
-│   ├── db.py              # SQLAlchemy + SQLite 画像持久化
+│   ├── db.py              # SQLAlchemy + SQLite：profiles 长期画像 + learning_sessions 学情轨迹
 │   ├── agents/
 │   │   ├── profile_agent.py    # 6 维画像抽取 + 姓名/专业正则
 │   │   ├── planner_agent.py    # 学习计划
