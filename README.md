@@ -42,7 +42,7 @@
   `review` 后接**条件边**——有薄弱项才进辅导循环，没有则直接收尾（该确定的地方确定，该自主的地方自主）
 - **Provider 可换**：默认 DeepSeek（OpenAI 兼容协议），改 3 行配置即可切到 OpenAI / Claude / 通义千问 / 百炼 MaaS
 - **类型安全**：Pydantic + 类型注解 + FastAPI 自动 OpenAPI 文档
-- **可测试 + 可评测**：64 条单测全程不调用真实 LLM（mock / 脚本化假模型），无需 API Key；
+- **可测试 + 可评测**：83 条单测全程不调用真实 LLM（mock / 脚本化假模型），无需 API Key；
   另含**防幻觉评测集**（`eval/bad_cases.json` + `scripts/run_eval.py`）——6 类用例 / 4 类断言，
   量化「编造链接数 = 0、来源可验证率 100%」，可挂 CI 做回归
 - **Docker 一键起**：`docker-compose up`
@@ -116,6 +116,42 @@ docker-compose up
 > 在 GitHub 页面里直接点这个链接是打不开的（它只会去连**点击者自己**的 8000 端口）。
 > 想看效果请按上面的命令在本地跑起来：克隆 → `pip install -e .` → `uvicorn app.main:app`，
 > 全程 3 条命令，**不需要任何 API Key**（不配 Key 自动走离线演示模式）。
+
+### React 用户端（可视化界面）
+
+除了 `/docs` 和 Gradio 页（`python app.py`，端口 7860），本项目内置一个
+**9 页面的 React 用户端**（画像对话 / 资源生成 / 学习路径 / 智能辅导 / 前后测实证 / 知识库管理 / 学习分析）：
+
+```bash
+# 前置：后端已按上面步骤跑在 8000 端口
+cd frontend
+npm install
+npm run dev
+# 打开 http://localhost:5173
+```
+
+前端通过 Vite 代理把 `/api` 转发到 `http://localhost:8000`（见 `frontend/vite.config.js`），
+所有页面走同一套多智能体后端，无需任何前端侧配置。
+
+### 运行截图
+
+| 画像对话 | 资源生成（多智能体执行进度） |
+| --- | --- |
+| ![画像对话](screenshots/02-profile-chat.png) | ![资源生成](screenshots/03-generate.png) |
+
+| 资源详情（RAG 引用来源） | 学习路径 |
+| --- | --- |
+| ![资源详情](screenshots/04-resource-detail.png) | ![学习路径](screenshots/05-path.png) |
+
+| 智能辅导（ReAct 循环） | 前后测效果实证 |
+| --- | --- |
+| ![智能辅导](screenshots/06-tutor.png) | ![效果实证](screenshots/07-efficacy.png) |
+
+| 知识库管理 | 学习效果分析 |
+| --- | --- |
+| ![知识库管理](screenshots/08-knowledge.png) | ![学习效果分析](screenshots/09-analytics.png) |
+
+> 更多页面见 [screenshots/](screenshots/) 目录。
 
 > **关于 `.env`**：由 `app/config.py` 在导入时统一加载，并且**同时注入 `os.environ`**。
 > 本项目里 JWT 密钥、腾讯云短信、SMTP、微信/QQ 开放平台都是用 `os.getenv` 读的，
@@ -215,7 +251,7 @@ pytest -q
 - `tests/test_eval_suite.py`：**评测器自检**（判定逻辑单测 + 离线跑完全部评测用例）
 - `tests/test_tencent_sms.py`：TC3-HMAC-SHA256 签名对照腾讯云官方公开测试向量校验
 
-共 **64 passed**。测试全程不调用真实 LLM（LLM 全部 mock 或用脚本化假模型），无需 API Key。
+共 **83 passed**。测试全程不调用真实 LLM（LLM 全部 mock 或用脚本化假模型），无需 API Key。
 
 ## 评测（防幻觉评测集）
 
@@ -257,6 +293,9 @@ python scripts/run_eval.py --base http://localhost:8000
 python-learning-agent/
 ├── app/
 │   ├── main.py            # FastAPI 入口（/api/learn、/api/profile/build …）
+│   ├── a3_compat.py       # A3 React 用户端兼容 API 层（/api/* 信封契约 → 多智能体后端）
+│   ├── a3_store.py        # 兼容层 JSON 存储（资源包 / 前后测记录 / 知识库文档 / 日志）
+│   ├── efficacy_bank.py   # 前后测诊断题库（服务端判分）
 │   ├── graph.py           # LangGraph 状态图：load_memory→profile→planner→resource→quiz→review→(条件边)tutor→save_memory
 │   ├── tools.py           # Agent 工具层：4 个只读工具（RAG 检索/读画像/读学情/统计会话），零 LLM 依赖
 │   ├── models.py          # Pydantic 模型：Profile / Plan / Resource / Quiz / Review / TutorSession / AgentState
@@ -279,6 +318,8 @@ python-learning-agent/
 │   └── bad_cases.json     # 防幻觉评测集（6 类用例 + 断言）
 ├── scripts/
 │   └── run_eval.py        # 评测 CLI（零配置，进程内跑完整管线）
+├── frontend/              # React 用户端（9 页面，Vite 代理 /api → 8000）
+├── screenshots/           # 运行截图（README 引用）
 ├── tests/                 # pytest（mock LLM，无需 key）
 ├── Dockerfile
 ├── docker-compose.yml
@@ -309,7 +350,7 @@ python-learning-agent/
 - [x] 跨会话三层记忆
 - [x] 自主辅导 Agent（ReAct 工具调用循环）
 - [x] 防幻觉评测集 + 评测 CLI（离线可跑）
-- [x] pytest 64 passed（mock LLM）+ Docker
+- [x] pytest 83 passed（mock LLM）+ Docker
 - [ ] 前端（复用 A3 React 版）
 - [ ] 在线 demo 部署
 - [ ] 演示视频

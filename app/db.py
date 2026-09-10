@@ -141,6 +141,22 @@ def load_profile(user_id: str) -> Profile | None:
         return rec.to_profile() if rec else None
 
 
+def list_profiles() -> list[tuple[str, Profile]]:
+    """返回全部画像 [(user_id, Profile), ...]，按创建顺序倒序（新的在前）。"""
+    engine = get_engine()
+    with Session(engine) as session:
+        recs = session.scalars(select(ProfileRecord).order_by(desc(ProfileRecord.id))).all()
+        return [(r.user_id, r.to_profile()) for r in recs]
+
+
+def count_all_profiles() -> int:
+    engine = get_engine()
+    with Session(engine) as session:
+        return (
+            session.scalar(select(func.count()).select_from(ProfileRecord)) or 0
+        )
+
+
 # --------------------------------------------------------------------------- #
 # 学情轨迹（跨会话记忆的第二层）
 # --------------------------------------------------------------------------- #

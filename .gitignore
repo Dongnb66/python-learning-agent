@@ -33,3 +33,7 @@ eval/report_*.json
 
 # 本地推送辅助脚本（不上传）
 push-to-github.bat
+
+# 前端
+frontend/node_modules/
+frontend/dist/

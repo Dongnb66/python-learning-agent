@@ -55,6 +55,13 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="Python Learning Agent", version="0.1.0", lifespan=lifespan)
 graph = build_graph()
 
+# A3 前端兼容层必须先于下方 /api/profile/{user_id} 注册：
+# 两者对 GET /api/profile/{id} 的响应结构不同（信封包装 vs 裸 Profile），
+# FastAPI 按注册顺序匹配，先注册者生效。
+from app.a3_compat import router as a3_router  # noqa: E402
+
+app.include_router(a3_router)
+
 
 @app.get("/health")
 def health() -> dict:

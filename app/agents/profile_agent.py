@@ -65,7 +65,6 @@ _PROFILE_SYSTEM = """你是一名「学生画像分析智能体」。
 
 def build_profile_node(state: AgentState) -> dict:
     chat = get_structured_model(Profile, temperature=0.2)
-    full_text = dialogue_text(state["messages"])
 
     messages = (
         [SystemMessage(content=_PROFILE_SYSTEM)]
@@ -74,11 +73,14 @@ def build_profile_node(state: AgentState) -> dict:
     )
     profile: Profile = chat.invoke(messages)
 
-    # 高置信正则覆盖
-    name = extract_name(full_text)
+    # 高置信正则覆盖——只扫学生（user）消息。
+    # 若把 assistant 消息也算进来，「你好！我是学习画像助手」这类
+    # 系统开场白会被误提取成学生姓名/专业。
+    user_text = dialogue_text([m for m in state["messages"] if m.role == "user"])
+    name = extract_name(user_text)
     if name:
         profile.name = name
-    major = extract_major(full_text)
+    major = extract_major(user_text)
     if major:
         profile.major = major
 
