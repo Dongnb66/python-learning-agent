@@ -134,7 +134,7 @@ pytest -q
 - `tests/test_resource_guard.py`: **the three anti-hallucination guarantees** (empty retrieval / no LLM call on refusal / whitelist drops fabricated links)
 - `tests/test_eval_suite.py`: evaluator self-check (judgement logic + full offline case run)
 
-**46 passed.** No real LLM is called — no API key needed.
+**64 passed.** No real LLM is called — no API key needed.
 
 ## Evaluation (anti-hallucination suite)
 
@@ -177,7 +177,7 @@ Both repos share the same business design; this repo is the Python rewrite:
 - [x] RAG anti-hallucination resource recommendation
 - [x] FastAPI endpoints + SQLite persistence
 - [x] Anti-hallucination evaluation suite + CLI (runs offline)
-- [x] pytest 46 passed (mocked LLM, no API key needed) + Docker
+- [x] pytest 64 passed (mocked LLM, no API key needed) + Docker
 - [ ] Frontend (reuse the A3 React app)
 - [ ] Hosted online demo
 - [ ] Demo video
