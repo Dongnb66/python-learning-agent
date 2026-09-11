@@ -49,6 +49,14 @@ def get_retriever(k: int = 4) -> BM25Retriever:
     return _retriever
 
 
+def _guard_disabled() -> bool:
+    """消融实验开关：`ABLATE_THRESHOLD=1` 时关掉相关性阈值过滤。
+
+    仅供 `scripts/run_ablation.py` 做对照实验使用，生产环境不会设置该变量。
+    """
+    return os.getenv("ABLATE_THRESHOLD", "") == "1"
+
+
 def retrieve(query: str, k: int = 4, min_score: float = 0.0) -> list[Document]:
     """返回与 query 最相关的 k 个资料片段（按 BM25 分数降序）。
 
@@ -63,4 +71,7 @@ def retrieve(query: str, k: int = 4, min_score: float = 0.0) -> list[Document]:
     r = get_retriever(k=k)
     scores = r.vectorizer.get_scores(r.preprocess_func(query))
     ranked = sorted(zip(scores, r.docs), key=lambda pair: pair[0], reverse=True)
+    # 消融实验：关掉阈值时退回 BM25Retriever 的原生行为（含 0 分项）
+    if _guard_disabled():
+        return [doc for _score, doc in ranked[:k]]
     return [doc for score, doc in ranked[:k] if score > min_score]

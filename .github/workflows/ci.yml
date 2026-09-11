@@ -33,10 +33,16 @@ jobs:
         # 零配置离线跑：无 Key 自动走 mock 桩，进程内运行，不需要起服务
         run: python scripts/run_eval.py
 
+      - name: Anti-hallucination ablation
+        # 逐道关掉防护约束，验证「关掉就会变坏」——证明约束不是装饰
+        run: python scripts/run_ablation.py
+
       - name: Upload evaluation report
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: eval-report-py${{ matrix.python-version }}
-          path: eval/report_*.json
+          path: |
+            eval/report_*.json
+            eval/ablation_*.json
           if-no-files-found: warn

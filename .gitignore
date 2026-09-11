@@ -26,6 +26,7 @@ env/
 
 # 评测报告（每次运行生成，带时间戳）
 eval/report_*.json
+eval/ablation_*.json
 
 # IDE
 .idea/

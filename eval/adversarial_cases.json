@@ -1,0 +1,49 @@
+{
+  "_说明": "防幻觉消融实验专用：对抗性用例。这些用例刻意使用资料库中完全不存在的话题（量子计算 / 元代青花瓷 / 区块链共识算法），使检索必然返回空 —— 从而真正触发「相关性阈值 → 代码级拒答 → URL 白名单」三道约束。配合 scripts/run_ablation.py 使用。",
+  "_为何需要": "常规用例 eval/bad_cases.json 走 mock 模式时，学习计划是固定桩、检索总能命中资料库，三道约束都不会被触发，因此消融实验的四组结果会完全一样（实验无效）。本组用必然空检索的输入，让约束真正受力。",
+  "local_resource_file": "app/data/resources.json",
+  "cases": [
+    {
+      "id": "A1_no_match_quantum",
+      "desc": "资料库完全没有「量子计算」相关条目 → 必须拒答，不允许推荐任何资源",
+      "messages": [
+        {"role": "user", "content": "我想系统学习量子计算的超导量子比特架构"},
+        {"role": "user", "content": "每周 8 小时，只看论文"}
+      ],
+      "assert": {
+        "all_products_present": true,
+        "resource_url_must_be_local": true,
+        "may_refuse_if_no_match": true,
+        "expect_refusal": true
+      }
+    },
+    {
+      "id": "A2_no_match_porcelain",
+      "desc": "资料库完全没有「元代青花瓷」相关条目 → 必须拒答",
+      "messages": [
+        {"role": "user", "content": "我想学习元代青花瓷的釉下钴料鉴定方法"},
+        {"role": "user", "content": "每周 3 小时"}
+      ],
+      "assert": {
+        "all_products_present": true,
+        "resource_url_must_be_local": true,
+        "may_refuse_if_no_match": true,
+        "expect_refusal": true
+      }
+    },
+    {
+      "id": "A3_no_match_consensus",
+      "desc": "资料库完全没有「区块链共识算法」相关条目 → 必须拒答",
+      "messages": [
+        {"role": "user", "content": "我想深入研究 PBFT 与 Raft 的拜占庭容错差异"},
+        {"role": "user", "content": "每天 1 小时"}
+      ],
+      "assert": {
+        "all_products_present": true,
+        "resource_url_must_be_local": true,
+        "may_refuse_if_no_match": true,
+        "expect_refusal": true
+      }
+    }
+  ]
+}

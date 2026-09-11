@@ -42,7 +42,7 @@
   `review` 后接**条件边**——有薄弱项才进辅导循环，没有则直接收尾（该确定的地方确定，该自主的地方自主）
 - **Provider 可换**：默认 DeepSeek（OpenAI 兼容协议），改 3 行配置即可切到 OpenAI / Claude / 通义千问 / 百炼 MaaS
 - **类型安全**：Pydantic + 类型注解 + FastAPI 自动 OpenAPI 文档
-- **可测试 + 可评测**：83 条单测全程不调用真实 LLM（mock / 脚本化假模型），无需 API Key；
+- **可测试 + 可评测**：88 条单测全程不调用真实 LLM（mock / 脚本化假模型），无需 API Key；
   另含**防幻觉评测集**（`eval/bad_cases.json` + `scripts/run_eval.py`）——6 类用例 / 4 类断言，
   量化「编造链接数 = 0、来源可验证率 100%」，可挂 CI 做回归
 - **Docker 一键起**：`docker-compose up`
@@ -248,10 +248,12 @@ pytest -q
 - `tests/test_tutor_agent.py`：**自主辅导 Agent**（ReAct 循环：真实执行工具 / 自主停止 / 轮数上限 /
   越权防护 / 模型异常降级 / 占位符 Key 识别 / 条件边分支）
 - `tests/test_resource_guard.py`：**防幻觉三道硬约束**（无命中返回空 / 检索为空不调模型 / 白名单剔除编造链接）
+- `tests/test_anti_hallucination_ablation.py`：**三道光约束的消融回归**——逐道关掉，断言"关掉就会变坏"，
+  证明约束不是装饰（关掉白名单 → 编造 URL 确实漏出；关掉阈值 → 脏话题检索不再为空）
 - `tests/test_eval_suite.py`：**评测器自检**（判定逻辑单测 + 离线跑完全部评测用例）
 - `tests/test_tencent_sms.py`：TC3-HMAC-SHA256 签名对照腾讯云官方公开测试向量校验
 
-共 **83 passed**。测试全程不调用真实 LLM（LLM 全部 mock 或用脚本化假模型），无需 API Key。
+共 **88 passed**。测试全程不调用真实 LLM（LLM 全部 mock 或用脚本化假模型），无需 API Key。
 
 ## 评测（防幻觉评测集）
 
@@ -287,6 +289,33 @@ python scripts/run_eval.py --base http://localhost:8000
 > 注：`拒答` 分支在离线桩模式下无法通过端到端管线触达（桩的学习计划固定，检索总能命中）。
 > 该分支由 `tests/test_resource_guard.py` 用确定性单测覆盖——**检索为空 → 返回空资源且模型零调用**。
 
+### 消融实验：证明三道约束真的在起作用
+
+「我有三道防幻觉约束」是**声明**；只有证明"关掉它就会变坏"，才变成**机制**。
+
+```bash
+python scripts/run_ablation.py      # 零配置，把模型换成"永远编造链接"的假模型
+```
+
+它把每道约束**单独关掉**，跑同一组输入做对比（实测结果）：
+
+| 实验组 | 正常输入 | 脏输入（资料库无匹配） | 编造链接漏出 |
+|---|---|---|---|
+| ① 全约束（现状） | 1 条 | **0 条（正确拒答）** | **0 条** ✅ |
+| ② 关掉相关性阈值 | 1 条 | 1 条（❌ 不再拒答） | 0 条 |
+| ③ 关掉代码级拒答 | 1 条 | 0 条 | 0 条 |
+| ④ 关掉 URL 白名单 | 1 条 | 0 条 | **1 条（❌ 幻觉出界）** |
+
+读法：
+- **②说明阈值是拒答的前置条件**——没有阈值，检索永远非空，"检索为空→拒答"的分支就永不触发；
+- **④说明白名单是最后一道闸**——把模型换成"坏"的，编造的 URL 只有白名单能拦住；
+- **③组未变化是符合预期的**：阈值在前，已经拦住了脏输入，拒答分支本就不会被走到。
+
+> 诚实边界：消融实验在**机制层**做（直接调用 `resource` 节点 + 假模型），
+> 不是对整条管线做。原因是整条管线在 mock 模式下学习计划为固定桩、检索总能命中，
+> 三道约束都不会被触发，四组结果会完全一样——那样的实验是无效的。
+> 对应的回归断言见 `tests/test_anti_hallucination_ablation.py`（挂在 CI 上）。
+
 ## 项目结构
 
 ```
@@ -315,9 +344,11 @@ python-learning-agent/
 │   │   └── tutor_agent.py      # 自主辅导 Agent（ReAct 工具调用循环 + 条件边路由）
 │   └── data/resources.json     # 本地资料库（RAG 语料）
 ├── eval/
-│   └── bad_cases.json     # 防幻觉评测集（6 类用例 + 断言）
+│   ├── bad_cases.json     # 防幻觉评测集（6 类用例 + 断言）
+│   └── adversarial_cases.json  # 对抗性用例（必然空检索，供消融实验用）
 ├── scripts/
-│   └── run_eval.py        # 评测 CLI（零配置，进程内跑完整管线）
+│   ├── run_eval.py        # 评测 CLI（零配置，进程内跑完整管线）
+│   └── run_ablation.py    # 消融实验 CLI（逐道关掉约束，验证"关掉就变坏"）
 ├── frontend/              # React 用户端（9 页面，Vite 代理 /api → 8000）
 ├── screenshots/           # 运行截图（README 引用）
 ├── tests/                 # pytest（mock LLM，无需 key）
@@ -337,7 +368,7 @@ python-learning-agent/
 | RAG 防幻觉 | ✓ | ✓ 代码级三道约束（阈值检索 / 空命中拒答 / URL 白名单） |
 | 跨会话记忆 | × | ✓ 三层记忆（AgentState / profiles / learning_sessions） |
 | 自主决策 | × | ✓ ReAct 工具调用循环（LLM 自决调什么工具、调几轮、何时停） |
-| 效果评测 | × | ✓ 防幻觉评测集（6 用例 / 4 类断言 / JSON 报告 / 可挂 CI） |
+| 效果评测 | × | ✓ 防幻觉评测集（6 用例 / 4 类断言 / JSON 报告 / 可挂 CI）<br>✓ 消融实验（逐道关掉约束，证明约束非装饰） |
 | 工程化 | Express + React | FastAPI + 可选前端 |
 | Agent 框架 | 自写 orchestrator | **LangGraph**（含条件边） |
 | Docker 部署 | × | ✓ |
@@ -350,7 +381,8 @@ python-learning-agent/
 - [x] 跨会话三层记忆
 - [x] 自主辅导 Agent（ReAct 工具调用循环）
 - [x] 防幻觉评测集 + 评测 CLI（离线可跑）
-- [x] pytest 83 passed（mock LLM）+ Docker
+- [x] 防幻觉消融实验 + 回归断言（"关掉就变坏"）
+- [x] pytest 88 passed（mock LLM）+ Docker
 - [ ] 前端（复用 A3 React 版）
 - [ ] 在线 demo 部署
 - [ ] 演示视频

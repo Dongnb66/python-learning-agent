@@ -14,12 +14,24 @@
 """
 from __future__ import annotations
 
+import os
+
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from app.agents._common import to_lc_messages
 from app.llm import get_structured_model
 from app.models import AgentState, Plan, ResourceItem, ResourceList
 from app.rag import retrieve
+
+# ---- 消融实验开关（仅供 scripts/run_ablation.py 做对照实验，生产不设置）----
+def _refusal_disabled() -> bool:
+    """`ABLATE_REFUSAL=1`：关掉「检索为空 → 代码级拒答」这道约束。"""
+    return os.getenv("ABLATE_REFUSAL", "") == "1"
+
+
+def _whitelist_disabled() -> bool:
+    """`ABLATE_WHITELIST=1`：关掉 URL 白名单过滤这道约束。"""
+    return os.getenv("ABLATE_WHITELIST", "") == "1"
 
 _RESOURCE_SYSTEM = """你是「学习资源推荐智能体」。
 下面给出了「检索到的真实资料库片段」和「学生的学习计划」。
@@ -70,7 +82,7 @@ def build_resources_node(state: AgentState) -> dict:
     context, allowed = _collect_context(plan)
 
     # 第 2 步：资料库确实没有相关内容 → 代码级拒答，不调用模型、不编造
-    if not context:
+    if not context and not _refusal_disabled():
         return {"resources": []}
 
     plan_text = plan.model_dump_json(ensure_ascii=False) if plan else "（暂无计划）"
@@ -79,7 +91,7 @@ def build_resources_node(state: AgentState) -> dict:
         + to_lc_messages(state["messages"])
         + [
             HumanMessage(
-                content=f"【检索到的真实资料】\n{context}\n\n"
+                content=f"【检索到的真实资料】\n{context or '（本轮未检索到资料）'}\n\n"
                 f"【学习计划】\n{plan_text}\n\n请基于以上真实资料推荐资源 JSON 列表。"
             )
         ]
@@ -87,4 +99,6 @@ def build_resources_node(state: AgentState) -> dict:
     result: ResourceList = get_structured_model(ResourceList, temperature=0.2).invoke(messages)
 
     # 第 3 步：白名单过滤——模型幻觉出的链接在此被剔除
+    if _whitelist_disabled():
+        return {"resources": result.items}
     return {"resources": _enforce_whitelist(result.items, allowed)}
