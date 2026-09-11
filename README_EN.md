@@ -25,7 +25,8 @@ This is a Python migration of the A3 Node.js project: **business logic kept 1:1,
 - **Planning (PlannerAgent)**: builds a progressive learning path (with per-step time estimates) from the profile
 - **Resource recommendation (ResourceAgent) · RAG anti-hallucination (three code-level guarantees)**: not "telling the model in the prompt not to make things up", but making "no fabrication" a **code invariant** — ① **thresholded retrieval**: BM25 with a relevance floor, so an unmatched topic returns *nothing* instead of padding with zero-score docs; ② **code-level refusal**: when retrieval is empty the node returns `[]` **without calling the model at all** (no evidence → no generation); ③ **URL whitelist**: every item the model returns must match this round's retrieved candidates (or a corpus title), otherwise it is dropped — title-only items are normalized to the real corpus URL. **Even if the model hallucinates, it cannot get through.** Proven by `tests/test_resource_guard.py`
 - **Self-test (QuizAgent) + review (ReviewAgent)**: closed-loop learning feedback
-- **Autonomous tutoring (TutorAgent) · ReAct tool-calling loop**: once the review surfaces weak points, the model **decides for itself** what to look up — 4 read-only tools (RAG retrieval / read profile / read last session / count sessions), looping through *decide → act → observe → decide again* until it has enough, capped at 4 rounds. Every decision and observation is recorded as an auditable `trace`. Falls back to a rule policy when no key is configured or the model errors out
+- **Autonomous tutoring (TutorAgent) · ReAct tool-calling loop**: once the review surfaces weak points, the model **decides for itself** what to look up — 5 read-only tools (RAG retrieval / read profile / read last session / count sessions / load skill body on demand), looping through *decide → act → observe → decide again* until it has enough, capped at 4 rounds. Every decision and observation is recorded as an auditable `trace`. Falls back to a rule policy when no key is configured or the model errors out
+- **Skill lazy loading (progressive disclosure)**: teaching methods are packaged as skill files `app/data/skills/*.md` (frontmatter metadata + body playbook). Only **metadata stays resident** in the system prompt (`list_skills` scans the frontmatter only, never the body); the **body is loaded on demand** — when the model judges a scenario matches a skill, it autonomously calls the `load_skill` tool inside the ReAct loop. Resident context grows linearly with the *number* of skills, not their length. Unknown skill names are **rejected at the code level** (returns the available list instead of fabricating), the same anti-hallucination principle as retrieval. Verified by `tests/test_skills.py`
 - **LangGraph orchestration**: state graph `load_memory → profile → planner → resource → quiz → review → tutor → save_memory`, with a **conditional edge** after `review` — the tutoring loop only runs when weak points exist. (Deterministic where it should be, autonomous where it must be)
 - **Swappable provider**: DeepSeek by default (OpenAI-compatible); switch to OpenAI / Claude / Qwen / Bailian MaaS by editing 3 lines
 - **Type-safe**: Pydantic + type hints + auto-generated OpenAPI docs
@@ -48,7 +49,7 @@ flowchart TD
     SG --> WF
     E -->|conditional edge: weak points| T[TutorAgent<br/>autonomous ReAct loop]
     E -->|no weak points| SM[save_memory]
-    T -.autonomously calls.-> TOOLS[4 read-only tools]
+    T -.autonomously calls.-> TOOLS[5 read-only tools]
     T --> SM
     SM --> DB2[(SQLite<br/>profiles + learning_sessions)]
     C <-.retrieve real docs.-> KB[(BM25 local corpus)]
@@ -132,9 +133,10 @@ pytest -q
 - `tests/test_memory.py`: cross-session memory (read-back / accumulate / failure isolation)
 - `tests/test_tutor_agent.py`: autonomous tutoring agent (ReAct loop, self-termination, round cap, privilege guard, graceful degradation)
 - `tests/test_resource_guard.py`: **the three anti-hallucination guarantees** (empty retrieval / no LLM call on refusal / whitelist drops fabricated links)
+- `tests/test_skills.py`: skill lazy loading (metadata catalog never leaks body text / body readable on demand / unknown names refused)
 - `tests/test_eval_suite.py`: evaluator self-check (judgement logic + full offline case run)
 
-**88 passed.** No real LLM is called — no API key needed.
+**94 passed.** No real LLM is called — no API key needed.
 
 ## Evaluation (anti-hallucination suite)
 
@@ -177,7 +179,7 @@ Both repos share the same business design; this repo is the Python rewrite:
 - [x] RAG anti-hallucination resource recommendation
 - [x] FastAPI endpoints + SQLite persistence
 - [x] Anti-hallucination evaluation suite + CLI (runs offline)
-- [x] pytest 88 passed (mocked LLM, no API key needed) + Docker
+- [x] pytest 94 passed (mocked LLM, no API key needed) + Docker
 - [ ] Frontend (reuse the A3 React app)
 - [ ] Hosted online demo
 - [ ] Demo video

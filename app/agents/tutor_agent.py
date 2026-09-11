@@ -13,7 +13,7 @@
            │ 产出 tool_calls（可 0~N 个）
            ▼
     ┌─────────────┐
-    │  执行工具    │  只读查询：检索资料 / 读画像 / 读历史学情
+    │  执行工具    │  只读查询：检索资料 / 读画像 / 读学情 / 读技能正文
     └──────┬──────┘
            │ observation 回灌上下文
            ▼
@@ -40,6 +40,7 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, Tool
 
 from app.agents._common import to_lc_messages
 from app import config
+from app import skills as skills_registry
 from app.config import get_settings
 from app.models import AgentState, TutorSession, ToolCallRecord
 from app.tools import TOOL_REGISTRY
@@ -66,13 +67,16 @@ _SYSTEM = """你是「自主辅导智能体」，负责在学生完成一轮学�
 - count_history_sessions(user_id)：判断他是新学员还是老学员；
 - get_last_session(user_id)：看上次的掌握度、薄弱项和当时的建议；
 - get_student_profile(user_id)：看长期画像（知识基础 / 认知风格 / 资源偏好）；
-- search_learning_resources(query)：在真实资料库里检索可用于补短板的学习材料。
+- search_learning_resources(query)：在真实资料库里检索可用于补短板的学习材料；
+- load_skill(skill_name)：读取某个技能的完整操作步骤（技能目录见下方「可用技能」清单）。
 
 **决策规则（自己判断，不要机械照搬）**：
 1. 先确认信息是否足够。信息不足就调工具去查；已经够了就直接给结论，不要为了凑数而调用工具。
 2. 老学员要对照【上次学情】看哪些薄弱项没改善；新学员则不必做纵向对比。
 3. 检索资料时，query 直接使用具体的薄弱知识点（例如「递归」「指针」），不要用「学习建议」这类空泛词。
 4. 资料库检索不到的内容，如实说明「暂无现成材料」，**严禁编造资料名或链接**。
+5. 若「可用技能」清单里有技能命中当前场景，先 load_skill 读取完整步骤、按指南辅导；
+   清单里没有的技能不要假设它存在，更不要编造步骤。
 
 信息收集充分后，停止调用工具，直接输出一份简短的辅导结论（120 字以内）：
 先说卡点是什么、再说下一步具体该做什么（可引用检索到的真实资料标题）。"""
@@ -120,8 +124,12 @@ def _run_llm_react(question: str, user_id: str, history: list) -> TutorSession:
 
     llm = get_chat_model(temperature=0.2).bind_tools(list(TOOL_REGISTRY.values()))
 
+    # 技能懒加载：常驻上下文的只有「清单」（元数据），正文必须经 load_skill 按需读取。
+    # 每次进入节点时重新渲染，保证技能文件热更新后无需重启进程。
+    system_prompt = _SYSTEM + skills_registry.skills_metadata_prompt()
+
     messages: list[Any] = (
-        [SystemMessage(content=_SYSTEM)]
+        [SystemMessage(content=system_prompt)]
         + to_lc_messages(history)
         + [HumanMessage(content=question)]
     )

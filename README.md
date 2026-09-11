@@ -35,14 +35,20 @@
   已用 `tests/test_resource_guard.py` 确定性证明
 - **自测题（QuizAgent）+ 学情复盘（ReviewAgent）**：闭环学习反馈
 - **自主辅导（TutorAgent）· ReAct 工具调用循环**：复盘出薄弱项后，模型**自主决定**去查什么——
-  可调用 4 个只读工具（检索真实资料 / 读长期画像 / 读上次学情 / 统计历史会话数），
+  可调用 5 个只读工具（检索真实资料 / 读长期画像 / 读上次学情 / 统计历史会话数 / 按需加载技能正文），
   按「决策 → 调工具 → 观察 → 再决策」循环直到信息足够，最多 4 轮防失控；
   **每轮决策与观察都留成可审计的 `trace`**。无 Key 或模型异常时自动降级规则策略，管线不中断
+- **Skill 懒加载（渐进式披露）**：领域教学方法沉淀为技能包 `app/data/skills/*.md`
+  （frontmatter 元数据 + 正文操作指南）。**元数据常驻**系统提示词（`list_skills` 只扫 frontmatter，
+  不读正文），**正文按需读取**——模型在 ReAct 循环里判断场景命中时，自主调用 `load_skill` 工具加载完整步骤。
+  技能数量增长时，常驻上下文开销只与技能条数线性相关、与正文长度无关；
+  未知技能名**代码级拒答**（返回可用清单，不编造），与检索防幻觉同一设计原则。
+  已用 `tests/test_skills.py` 断言「清单不掺正文 / 正文按需可读 / 未知拒答」
 - **LangGraph 编排**：状态图 `load_memory → profile → planner → resource → quiz → review → tutor → save_memory`，
   `review` 后接**条件边**——有薄弱项才进辅导循环，没有则直接收尾（该确定的地方确定，该自主的地方自主）
 - **Provider 可换**：默认 DeepSeek（OpenAI 兼容协议），改 3 行配置即可切到 OpenAI / Claude / 通义千问 / 百炼 MaaS
 - **类型安全**：Pydantic + 类型注解 + FastAPI 自动 OpenAPI 文档
-- **可测试 + 可评测**：88 条单测全程不调用真实 LLM（mock / 脚本化假模型），无需 API Key；
+- **可测试 + 可评测**：94 条单测全程不调用真实 LLM（mock / 脚本化假模型），无需 API Key；
   另含**防幻觉评测集**（`eval/bad_cases.json` + `scripts/run_eval.py`）——6 类用例 / 4 类断言，
   量化「编造链接数 = 0、来源可验证率 100%」，可挂 CI 做回归
 - **Docker 一键起**：`docker-compose up`
@@ -63,7 +69,7 @@ flowchart TD
     SG --> WF
     E -->|条件边：有薄弱项| T[TutorAgent<br/>自主辅导 ReAct 循环]
     E -->|无薄弱项| SM[save_memory]
-    T -.自主调用.-> TOOLS[4 个只读工具<br/>检索 / 读画像 / 读学情 / 统计会话]
+    T -.自主调用.-> TOOLS[5 个只读工具<br/>检索 / 读画像 / 读学情 / 统计会话 / 加载技能]
     T --> SM
     SM --> DB2[(SQLite<br/>profiles + learning_sessions)]
     C <-.检索真实资料.-> KB[(BM25 本地资料库)]
@@ -253,7 +259,7 @@ pytest -q
 - `tests/test_eval_suite.py`：**评测器自检**（判定逻辑单测 + 离线跑完全部评测用例）
 - `tests/test_tencent_sms.py`：TC3-HMAC-SHA256 签名对照腾讯云官方公开测试向量校验
 
-共 **88 passed**。测试全程不调用真实 LLM（LLM 全部 mock 或用脚本化假模型），无需 API Key。
+共 **94 passed**。测试全程不调用真实 LLM（LLM 全部 mock 或用脚本化假模型），无需 API Key。
 
 ## 评测（防幻觉评测集）
 
@@ -326,7 +332,8 @@ python-learning-agent/
 │   ├── a3_store.py        # 兼容层 JSON 存储（资源包 / 前后测记录 / 知识库文档 / 日志）
 │   ├── efficacy_bank.py   # 前后测诊断题库（服务端判分）
 │   ├── graph.py           # LangGraph 状态图：load_memory→profile→planner→resource→quiz→review→(条件边)tutor→save_memory
-│   ├── tools.py           # Agent 工具层：4 个只读工具（RAG 检索/读画像/读学情/统计会话），零 LLM 依赖
+│   ├── tools.py           # Agent 工具层：5 个只读工具（RAG 检索/读画像/读学情/统计会话/load_skill），零 LLM 依赖
+│   ├── skills.py          # Skill 懒加载：元数据常驻上下文，正文经 load_skill 工具按需读取
 │   ├── models.py          # Pydantic 模型：Profile / Plan / Resource / Quiz / Review / TutorSession / AgentState
 │   ├── config.py          # 配置层：pydantic-settings 读 .env + 注入 os.environ
 │   ├── llm.py             # ChatOpenAI 封装 + function calling 结构化输出（支持 MOCK_LLM 开关）
@@ -342,7 +349,9 @@ python-learning-agent/
 │   │   ├── review_agent.py     # 学情复盘
 │   │   ├── memory_agent.py     # 跨会话记忆读写（纯 IO，故障隔离）
 │   │   └── tutor_agent.py      # 自主辅导 Agent（ReAct 工具调用循环 + 条件边路由）
-│   └── data/resources.json     # 本地资料库（RAG 语料）
+│   └── data/
+│       ├── resources.json     # 本地资料库（RAG 语料）
+│       └── skills/            # 技能包（*.md：frontmatter 元数据 + 正文操作指南）
 ├── eval/
 │   ├── bad_cases.json     # 防幻觉评测集（6 类用例 + 断言）
 │   └── adversarial_cases.json  # 对抗性用例（必然空检索，供消融实验用）
@@ -382,7 +391,7 @@ python-learning-agent/
 - [x] 自主辅导 Agent（ReAct 工具调用循环）
 - [x] 防幻觉评测集 + 评测 CLI（离线可跑）
 - [x] 防幻觉消融实验 + 回归断言（"关掉就变坏"）
-- [x] pytest 88 passed（mock LLM）+ Docker
+- [x] pytest 94 passed（mock LLM）+ Docker
 - [ ] 前端（复用 A3 React 版）
 - [ ] 在线 demo 部署
 - [ ] 演示视频

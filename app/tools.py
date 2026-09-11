@@ -16,6 +16,7 @@ from __future__ import annotations
 from langchain_core.tools import tool
 
 from app import db
+from app import skills as skills_registry
 from app.rag import retrieve
 
 _MAX_SNIPPET = 240
@@ -90,12 +91,38 @@ def count_history_sessions(user_id: str) -> str:
     return f"该学生历史学习会话数：{db.count_sessions(user_id)}"
 
 
+# --------------------------------------------------------------------------- #
+# 工具 5：按需加载技能正文（Skill 懒加载的读取端）
+# --------------------------------------------------------------------------- #
+@tool
+def load_skill(skill_name: str) -> str:
+    """按需加载指定技能的完整操作指南（正文）。
+
+    系统提示词里只常驻技能清单（名称 / 一句话说明 / 适用时机）；
+    当你判断当前辅导场景命中某个技能时，调用本工具读取完整步骤。
+    skill_name 必须取自清单里列出的技能名，传未知名称只会得到可用清单——
+    禁止编造清单里不存在的技能。
+    """
+    meta = skills_registry.find_skill(skill_name)
+    if meta is None:
+        return (
+            f"（没有名为「{skill_name}」的技能，本次调用未执行任何加载。"
+            f"可用技能：{skills_registry.available_names()}。"
+            f"请只从可用技能中选择，或放弃加载。）"
+        )
+    body = skills_registry.load_skill_body(meta.name)
+    if not body:
+        return f"（技能 {meta.name} 的正文为空或读取失败，请勿假设其内容。）"
+    return f"【技能 {meta.name}｜{meta.description}｜适用：{meta.when_to_use}】\n{body}"
+
+
 # 供 Agent 绑定的一组工具
 TUTOR_TOOLS = [
     search_learning_resources,
     get_student_profile,
     get_last_session,
     count_history_sessions,
+    load_skill,
 ]
 
 # 工具名 → 可调用对象，供执行器按名分发
