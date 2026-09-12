@@ -89,7 +89,7 @@ def main() -> int:
         import requests
         from urllib.parse import urljoin
 
-        def invoker(user_id: str, messages: list[dict[str, str]]) -> dict:
+        def invoker(user_id: str, messages: list[dict[str, str]], case: dict) -> dict:
             r = requests.post(
                 urljoin(base_url.rstrip("/") + "/", "api/learn"),
                 json={"user_id": user_id, "messages": messages},
@@ -97,8 +97,14 @@ def main() -> int:
             )
             r.raise_for_status()
             return r.json()
+
+        unsupported = [c.get("id") for c in eval_suite.load_cases(args.cases)[1] if c.get("plan_titles")]
+        if unsupported:
+            print(f"[警告] --base 走 HTTP 无法注入学习计划，以下用例的拒答断言可能打不到点：{unsupported}")
     else:
-        invoker = eval_suite.default_invoker()
+        # 默认用 GraphInvoker 而非 HTTP 调用器：对抗用例声明了 plan_titles，
+        # 需要把话题真正注进计划，否则固定桩计划会让检索永远命中、拒答分支走不到。
+        invoker = eval_suite.GraphInvoker()
         if not args.verbose:
             _quiet_http_logs()
 

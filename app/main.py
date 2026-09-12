@@ -15,6 +15,9 @@
 - POST /api/verify/send        发送验证码（腾讯云短信 / 邮箱 SMTP）
 - POST /api/verify/check       校验验证码
 - GET  /api/verify/channels    通道状态（真实下发 or 演示模式）
+- GET  /api/metrics            运行指标（?format=prometheus 为 Prometheus 文本格式）
+- GET  /api/traces             最近若干次请求的 trace_id
+- GET  /api/traces/{trace_id}  单次请求的链路明细（各节点耗时 / 计数器 / 报错）
 
 运行：
     uvicorn app.main:app --reload
@@ -24,11 +27,13 @@ from __future__ import annotations
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException, Response
+from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session as DBSession
 
 from app import auth as auth_mod
+from app import telemetry
 from app.agents.profile_agent import build_profile_node
 from app.db import get_engine, init_db, load_profile, save_profile
 from app.graph import build_graph
@@ -69,29 +74,42 @@ def health() -> dict:
 
 
 @app.post("/api/profile/build", response_model=Profile)
-def api_build_profile(req: ProfileBuildRequest) -> Profile:
-    state: AgentState = {
-        "user_id": req.user_id,
-        "messages": req.messages,
-        "resources": [],
-        "errors": [],
-    }
-    try:
-        out = build_profile_node(state)
-    except Exception as e:  # noqa: BLE001
-        logger.exception("profile build failed")
-        raise HTTPException(status_code=500, detail=f"画像生成失败: {e}")
+def api_build_profile(req: ProfileBuildRequest, response: Response) -> Profile:
+    telemetry.bump(telemetry.C_REQUESTS)
+    with telemetry.trace_run() as trace:
+        state: AgentState = {
+            "user_id": req.user_id,
+            "messages": req.messages,
+            "resources": [],
+            "errors": [],
+        }
+        try:
+            out = build_profile_node(state)
+        except Exception as e:  # noqa: BLE001
+            logger.exception("profile build failed")
+            raise HTTPException(status_code=500, detail=f"画像生成失败: {e}")
 
-    profile = out["profile"]
-    try:
-        save_profile(req.user_id, profile)
-    except Exception as e:  # noqa: BLE001
-        logger.warning("save profile failed: %s", e)
+        profile = out["profile"]
+        try:
+            save_profile(req.user_id, profile)
+        except Exception as e:  # noqa: BLE001
+            logger.warning("save profile failed: %s", e)
+    response.headers["X-Trace-Id"] = trace.trace_id
     return profile
 
 
 @app.post("/api/learn", response_model=LearnResponse)
-def api_learn(req: LearnRequest) -> LearnResponse:
+def api_learn(req: LearnRequest, response: Response) -> LearnResponse:
+    telemetry.bump(telemetry.C_REQUESTS)
+    # 整条管线包在一条 trace 里：节点级 span、模型调用数、防幻觉拦截次数
+    # 都会归到这次请求名下，出错也照样落盘（便于事后查「哪一步炸的」）。
+    with telemetry.trace_run() as trace:
+        out = _run_learn(req)
+    response.headers["X-Trace-Id"] = trace.trace_id
+    return out
+
+
+def _run_learn(req: LearnRequest) -> LearnResponse:
     state: AgentState = {
         "user_id": req.user_id,
         "messages": req.messages,
@@ -123,6 +141,34 @@ def api_learn(req: LearnRequest) -> LearnResponse:
         tutoring=final.get("tutoring"),
         errors=final.get("errors", []),
     )
+
+
+# ============================ 可观测性 ============================
+@app.get("/api/metrics")
+def api_metrics(format: str = "json"):
+    """运行指标：JSON（默认）或 Prometheus 文本格式。
+
+    `guardrails` 一节专门回答「防幻觉到底生效没有」——把三道代码级约束的
+    拦截动作变成了计数器：检索空命中、代码级拒答、被白名单拦下的编造链接。
+    """
+    if format == "prometheus":
+        return PlainTextResponse(telemetry.render_prometheus())
+    return {"ok": True, "metrics": telemetry.snapshot()}
+
+
+@app.get("/api/traces")
+def api_traces(limit: int = 10) -> dict:
+    """最近若干次请求的 trace_id（新的在前）。"""
+    return {"ok": True, "trace_ids": telemetry.latest_trace_ids(max(1, min(limit, 50)))}
+
+
+@app.get("/api/traces/{trace_id}")
+def api_trace(trace_id: str) -> dict:
+    """单次请求的链路明细：走了哪些节点、各耗时多少、哪些计数器被触发。"""
+    trace = telemetry.get_trace(trace_id)
+    if trace is None:
+        raise HTTPException(status_code=404, detail="未找到该 trace（仅保留最近若干条）")
+    return {"ok": True, "trace": trace}
 
 
 @app.get("/api/profile/{user_id}", response_model=Profile)

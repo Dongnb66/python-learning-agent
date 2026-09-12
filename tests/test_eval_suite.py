@@ -1,11 +1,13 @@
 """评测脚本自身的测试 —— 评测器没被测过，它就是一厢情愿的数字。
 
-分两部分：
+分三部分：
 1. `check_case` / `summarize` 的纯逻辑单测（给假的响应，验证判定与算数正确）；
 2. **端到端**：以 `MOCK_LLM=1` 离线桩跑完整张 LangGraph，跑完 `eval/bad_cases.json`
-   全部用例，断言 100% 通过且编造链接为 0。
+   全部用例，断言 100% 通过且编造链接为 0；
+3. **对抗集必须真的拒答**：`expect_refusal` 断言真的生效（而不是被评测器忽略），
+   且 `GraphInvoker` 的计划注入真的把对抗话题送进了检索层。
 
-第 2 部分同时也是「零 Key 也能端到端跑通」这条能力声明的回归测试。
+第 2、3 部分同时也是「零 Key 也能端到端跑通」这条能力声明的回归测试。
 """
 from __future__ import annotations
 
@@ -13,10 +15,9 @@ import pytest
 from sqlalchemy import create_engine
 
 from app import db, eval_suite
-from app.graph import build_graph
-from app.models import Message
 
 CASES_PATH = "eval/bad_cases.json"
+ADVERSARIAL_PATH = "eval/adversarial_cases.json"
 CORPUS_PATH = "app/data/resources.json"
 
 
@@ -102,32 +103,8 @@ def mock_env(monkeypatch, tmp_path):
 
 
 def _graph_invoker():
-    """把 LangGraph 整图包成与 /api/learn 同形的调用器。"""
-    graph = build_graph()
-
-    def _dump(obj):
-        return obj.model_dump() if hasattr(obj, "model_dump") else obj
-
-    def _invoke(user_id: str, messages: list[dict[str, str]]) -> dict:
-        state = {
-            "user_id": user_id,
-            "messages": [Message(role=m["role"], content=m["content"]) for m in messages],
-            "resources": [],
-            "errors": [],
-        }
-        final = graph.invoke(state)
-        return {
-            "user_id": user_id,
-            "profile": _dump(final.get("profile")),
-            "plan": _dump(final.get("plan")),
-            "resources": [_dump(r) for r in (final.get("resources") or [])],
-            "quiz": _dump(final.get("quiz")),
-            "review": _dump(final.get("review")),
-            "tutoring": _dump(final.get("tutoring")),
-            "errors": final.get("errors", []),
-        }
-
-    return _invoke
+    """把 LangGraph 整图包成与 /api/learn 同形的调用器（含计划注入能力）。"""
+    return eval_suite.GraphInvoker()
 
 
 def test_eval_suite_passes_all_cases_offline(mock_env) -> None:
@@ -159,3 +136,135 @@ def test_eval_report_is_json_serializable(mock_env, tmp_path) -> None:
     assert path.exists()
     loaded = json.loads(path.read_text(encoding="utf-8"))
     assert loaded["summary"]["cases"] == len(cases)
+
+
+# --------------------------------------------------------------------------- #
+# 3. expect_refusal：断言必须真的生效
+# --------------------------------------------------------------------------- #
+def test_expect_refusal_fails_when_resources_returned() -> None:
+    """声明「必须拒答」的用例，一旦推荐了资源就必须判失败。
+
+    这条断言曾经缺失：mock 返回的资源 URL 全部取自真实资料库，
+    `resource_url_must_be_local` 查不出问题 → 三道约束被关掉时用例照样通过。
+    """
+    ok, fails, m = eval_suite.check_case(
+        _resp(["https://good.example.com/a"]),
+        {"assert": {"may_refuse_if_no_match": True, "expect_refusal": True}},
+        _WHITELIST,
+    )
+    assert not ok
+    assert m["refused"] is False
+    assert any("期望拒答" in f for f in fails)
+
+
+def test_expect_refusal_passes_on_empty_resources() -> None:
+    ok, fails, m = eval_suite.check_case(
+        _resp([]),
+        {"assert": {"resource_url_must_be_local": True, "expect_refusal": True}},
+        _WHITELIST,
+    )
+    assert ok, fails
+    assert m["refused"] is True
+
+
+def test_may_refuse_alone_does_not_require_refusal() -> None:
+    """`may_refuse_if_no_match` 只表示「允许为空」——不能反过来要求必须为空。"""
+    ok, fails, _ = eval_suite.check_case(
+        _resp(["https://good.example.com/a"]),
+        {"assert": {"may_refuse_if_no_match": True}},
+        _WHITELIST,
+    )
+    assert ok, fails
+
+
+# --------------------------------------------------------------------------- #
+# 4. 对抗集：真的走到拒答分支
+# --------------------------------------------------------------------------- #
+def test_graph_invoker_injects_case_plan_so_topic_reaches_retrieval(mock_env) -> None:
+    """注入的计划要真的生效，否则对抗话题会被固定桩计划挡住。"""
+    case = {
+        "id": "probe",
+        "messages": [{"role": "user", "content": "我想学量子计算"}],
+        "plan_titles": ["超导量子比特架构"],
+        "plan_goal": "学习量子计算",
+    }
+    resp = eval_suite.GraphInvoker()("probe-user", case["messages"], case)
+    assert resp["plan"]["goal"] == "学习量子计算"
+    assert [s["title"] for s in resp["plan"]["steps"]] == ["超导量子比特架构"]
+    assert resp["resources"] == [], "资料库没有该话题 → 必须拒答"
+
+
+def test_adversarial_cases_all_refuse_offline(mock_env) -> None:
+    """对抗集 3 例必须全部拒答（且无编造链接）—— 三道约束的端到端回归。"""
+    _, cases = eval_suite.load_cases(ADVERSARIAL_PATH)
+    local_urls = eval_suite.load_local_urls(CORPUS_PATH)
+    assert cases, "对抗集不能为空"
+    assert all(c.get("assert", {}).get("expect_refusal") for c in cases), \
+        "对抗集的每条都必须声明 expect_refusal，否则测不到拒答机制"
+
+    report = eval_suite.run_cases(_graph_invoker(), cases, local_urls)
+    s = report["summary"]
+    assert s["passed"] == s["cases"] == len(cases), [
+        (r["id"], r.get("fails") or r.get("error")) for r in report["results"] if not r["pass"]
+    ]
+    assert s["resource_count"] == 0, "对抗话题在资料库里不存在，不该推荐出任何资源"
+    assert s["refused_cases"] == s["refusal_eligible_cases"] == len(cases)
+    assert s["fabricated_links"] == 0
+
+
+def test_adversarial_cases_declare_plan_titles() -> None:
+    """每条对抗用例都要声明 plan_titles —— 否则注入不了话题，拒答断言会空转。"""
+    _, cases = eval_suite.load_cases(ADVERSARIAL_PATH)
+    for c in cases:
+        assert c.get("plan_titles"), f"{c['id']} 缺少 plan_titles，拒答分支走不到"
+
+
+def test_graph_invoker_records_a_trace_per_case(mock_env) -> None:
+    """复现报告里的耗时统计靠它 —— 每条用例都要留下可读的链路指标。"""
+    invoker = _graph_invoker()
+    invoker("trace-user", [{"role": "user", "content": "我想学 Python"}], {"id": "T1"})
+
+    assert len(invoker.traces) == 1
+    trace = invoker.traces[0]
+    assert trace["case_id"] == "T1"
+    assert trace["duration_ms"] >= 0
+    assert isinstance(trace["slowest"], list)
+    assert isinstance(trace["counters"], dict)
+
+
+# --------------------------------------------------------------------------- #
+# 5. 断言有效性：关掉守卫必须变红
+# --------------------------------------------------------------------------- #
+def test_adversarial_suite_survives_disabling_refusal_alone(mock_env, monkeypatch) -> None:
+    """纵深防御：只关「代码级拒答」，白名单仍会拦下全部无出处条目 → 依旧拒答。"""
+    monkeypatch.setenv("ABLATE_REFUSAL", "1")
+    _, cases = eval_suite.load_cases(ADVERSARIAL_PATH)
+    local_urls = eval_suite.load_local_urls(CORPUS_PATH)
+
+    s = eval_suite.run_cases(_graph_invoker(), cases, local_urls)["summary"]
+    assert s["passed"] == s["cases"], "单关一道不该漏 —— 白名单是第二道防线"
+    assert s["resource_count"] == 0
+
+
+def test_adversarial_suite_turns_red_when_two_guards_disabled(mock_env, monkeypatch) -> None:
+    """断言有效性证明（关键用例）。
+
+    把「代码级拒答」与「URL 白名单」两道同时关掉，模型输出被直接放行 →
+    不该出现的资源被推荐出来。此时 `expect_refusal` **必须**判失败。
+
+    修复前这条断言在评测器里根本没实现：mock 返回的资源 URL 全部取自真实
+    资料库，`resource_url_must_be_local` 查不出问题，于是关掉守卫后对抗集
+    依然「全过」—— 一个空转的断言会把真实回归合法化。
+    """
+    monkeypatch.setenv("ABLATE_REFUSAL", "1")
+    monkeypatch.setenv("ABLATE_WHITELIST", "1")
+    monkeypatch.delenv("ABLATE_THRESHOLD", raising=False)
+
+    _, cases = eval_suite.load_cases(ADVERSARIAL_PATH)
+    local_urls = eval_suite.load_local_urls(CORPUS_PATH)
+    report = eval_suite.run_cases(_graph_invoker(), cases, local_urls)
+
+    s = report["summary"]
+    assert s["passed"] == 0, "关掉守卫后应当全部判失败，否则断言是空转的"
+    assert s["resource_count"] > 0, "模型输出应当被放行（这才构成『不该推荐却推荐了』）"
+    assert all(any("期望拒答" in f for f in r["fails"]) for r in report["results"])

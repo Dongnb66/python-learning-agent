@@ -41,6 +41,7 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, Tool
 from app.agents._common import to_lc_messages
 from app import config
 from app import skills as skills_registry
+from app import telemetry
 from app.config import get_settings
 from app.models import AgentState, TutorSession, ToolCallRecord
 from app.tools import TOOL_REGISTRY
@@ -91,6 +92,7 @@ def _execute_tool(name: str, args: dict[str, Any], user_id: str) -> str:
     安全设计：涉及用户数据的工具强制注入服务端已知的 user_id，
     避免模型传入错误甚至伪造的标识去读取他人的画像 / 学情。
     """
+    telemetry.bump(telemetry.C_TOOL_CALLS)
     tool_obj = TOOL_REGISTRY.get(name)
     if tool_obj is None:
         available = "、".join(TOOL_REGISTRY)
@@ -101,7 +103,8 @@ def _execute_tool(name: str, args: dict[str, Any], user_id: str) -> str:
         safe_args["user_id"] = user_id
 
     try:
-        return str(tool_obj.invoke(safe_args))
+        with telemetry.span(f"tool.{name}"):
+            return str(tool_obj.invoke(safe_args))
     except Exception as exc:  # 单个工具失败不该让整轮循环崩掉
         return f"（工具 {name} 执行失败：{type(exc).__name__}: {exc}）"
 

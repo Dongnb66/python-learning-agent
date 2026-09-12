@@ -23,10 +23,14 @@ env/
 .pytest_cache/
 .cache/
 .mypy_cache/
+.pytest_tmp/
+_tmp_pytest/
 
 # 评测报告（每次运行生成，带时间戳）
 eval/report_*.json
 eval/ablation_*.json
+# 注意：eval/reproduce_report.json 是**要提交**的 —— 它是 README 里
+# 那些数字（测试数 / 用例数 / 编造链接 0）的唯一可对照物，含环境指纹。
 
 # IDE
 .idea/

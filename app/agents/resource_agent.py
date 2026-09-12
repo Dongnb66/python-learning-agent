@@ -18,6 +18,7 @@ import os
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
+from app import telemetry
 from app.agents._common import to_lc_messages
 from app.llm import get_structured_model
 from app.models import AgentState, Plan, ResourceItem, ResourceList
@@ -67,11 +68,16 @@ def _enforce_whitelist(items: list[ResourceItem], allowed: dict[str, str]) -> li
     """只放行有真实出处的条目；缺 URL 但标题能对上的，补成资料库真实 URL。"""
     allowed_urls = set(allowed.values())
     kept: list[ResourceItem] = []
+    blocked = 0
     for it in items:
         if it.url and it.url in allowed_urls:
             kept.append(it)
         elif it.title and it.title in allowed:
             kept.append(it.model_copy(update={"url": allowed[it.title]}))
+        else:
+            blocked += 1  # 既对不上 URL 也对不上标题 = 模型编造的条目
+    # 第③道守卫的运行时证据：被拦下的编造条目数
+    telemetry.bump(telemetry.C_FABRICATED_BLOCKED, blocked)
     return kept
 
 
@@ -83,6 +89,8 @@ def build_resources_node(state: AgentState) -> dict:
 
     # 第 2 步：资料库确实没有相关内容 → 代码级拒答，不调用模型、不编造
     if not context and not _refusal_disabled():
+        # 第②道守卫的运行时证据：本次请求因「无事实依据」而拒答
+        telemetry.bump(telemetry.C_REFUSALS)
         return {"resources": []}
 
     plan_text = plan.model_dump_json(ensure_ascii=False) if plan else "（暂无计划）"
@@ -100,5 +108,8 @@ def build_resources_node(state: AgentState) -> dict:
 
     # 第 3 步：白名单过滤——模型幻觉出的链接在此被剔除
     if _whitelist_disabled():
-        return {"resources": result.items}
-    return {"resources": _enforce_whitelist(result.items, allowed)}
+        items = result.items
+    else:
+        items = _enforce_whitelist(result.items, allowed)
+    telemetry.bump(telemetry.C_RESOURCES_RETURNED, len(items))
+    return {"resources": items}

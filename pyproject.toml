@@ -35,3 +35,9 @@ exclude = ["tests*", "docs*", "data*"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
+# 把 pytest 的临时目录固定在项目内：某些受限环境（企业安全策略 / 沙箱）
+# 会拒绝清理系统临时目录下的 pytest-of-* 软链接，导致测试跑完后在 session
+# 收尾阶段抛 PermissionError —— 结果全绿却拿到非零退出码。
+# 固定到项目内既绕开这个环境坑，也让测试产物集中可见（已 gitignore）。
+# 注意：basetemp 只能通过命令行/ addopts 指定，不能写成 ini 键。
+addopts = "--basetemp=.pytest_tmp"

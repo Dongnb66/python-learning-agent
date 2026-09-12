@@ -1,6 +1,8 @@
 {
-  "_说明": "防幻觉消融实验专用：对抗性用例。这些用例刻意使用资料库中完全不存在的话题（量子计算 / 元代青花瓷 / 区块链共识算法），使检索必然返回空 —— 从而真正触发「相关性阈值 → 代码级拒答 → URL 白名单」三道约束。配合 scripts/run_ablation.py 使用。",
-  "_为何需要": "常规用例 eval/bad_cases.json 走 mock 模式时，学习计划是固定桩、检索总能命中资料库，三道约束都不会被触发，因此消融实验的四组结果会完全一样（实验无效）。本组用必然空检索的输入，让约束真正受力。",
+  "_说明": "防幻觉对抗集：用例刻意使用资料库中完全不存在的话题（量子计算 / 元代青花瓷 / 区块链共识算法），并显式声明 expect_refusal —— 必须拒答，而不是「允许拒答」。配合 scripts/run_eval.py 或 scripts/reproduce.py 运行。",
+  "_为何需要": "常规用例 eval/bad_cases.json 走 mock 模式时，学习计划是固定桩、检索总能命中资料库，三道约束都不会被触发，因此四组消融结果完全一样（实验无效）。本组用必然空检索的输入让约束真正受力。",
+  "_plan_titles 的作用": "检索用的 query 是**计划步骤标题**，不是用户原话。固定桩计划永远关于 Python/FastAPI，即使输入「量子计算」也照样命中 → 拒答分支根本走不到，断言等于空转。因此每条用例显式声明 plan_titles，由 eval_suite.GraphInvoker 注入一个只产出该计划的 planner 节点，让对抗话题真正进入检索层。注入的计划写在用例数据里（可见、可审），不是藏在校验逻辑里的暗门。",
+  "_expect_refusal 的作用": "may_refuse_if_no_match 只表示「允许为空」，空不空都算过；expect_refusal 要求**必须**为空。缺了它，三道约束被关掉时用例仍会通过（mock 返回的资源 URL 全部取自真实资料库，白名单查不出问题）——断言没生效就等于没有断言。",
   "local_resource_file": "app/data/resources.json",
   "cases": [
     {
@@ -10,6 +12,8 @@
         {"role": "user", "content": "我想系统学习量子计算的超导量子比特架构"},
         {"role": "user", "content": "每周 8 小时，只看论文"}
       ],
+      "plan_goal": "学习量子计算",
+      "plan_titles": ["超导量子比特架构", "量子纠错码原理"],
       "assert": {
         "all_products_present": true,
         "resource_url_must_be_local": true,
@@ -24,6 +28,8 @@
         {"role": "user", "content": "我想学习元代青花瓷的釉下钴料鉴定方法"},
         {"role": "user", "content": "每周 3 小时"}
       ],
+      "plan_goal": "学习古陶瓷鉴定",
+      "plan_titles": ["元代青花瓷钴料鉴定", "釉下彩绘工艺"],
       "assert": {
         "all_products_present": true,
         "resource_url_must_be_local": true,
@@ -38,6 +44,8 @@
         {"role": "user", "content": "我想深入研究 PBFT 与 Raft 的拜占庭容错差异"},
         {"role": "user", "content": "每天 1 小时"}
       ],
+      "plan_goal": "学习分布式共识算法",
+      "plan_titles": ["PBFT 拜占庭容错", "Raft 共识算法"],
       "assert": {
         "all_products_present": true,
         "resource_url_must_be_local": true,

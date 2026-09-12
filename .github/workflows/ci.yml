@@ -29,13 +29,11 @@ jobs:
       - name: Run tests
         run: pytest -q
 
-      - name: Anti-hallucination evaluation
-        # 零配置离线跑：无 Key 自动走 mock 桩，进程内运行，不需要起服务
-        run: python scripts/run_eval.py
-
-      - name: Anti-hallucination ablation
-        # 逐道关掉防护约束，验证「关掉就会变坏」——证明约束不是装饰
-        run: python scripts/run_ablation.py
+      - name: Reproduce (eval + adversarial + ablation)
+        # 一条命令跑完三件事，失败即非零退出：
+        #   常规评测 6 例、对抗评测 3 例（必须拒答）、防幻觉消融 4 组对照。
+        # 报告带环境指纹（Python/平台/依赖版本/git commit），便于事后对照。
+        run: python scripts/reproduce.py --skip-pytest
 
       - name: Upload evaluation report
         if: always()
@@ -45,4 +43,5 @@ jobs:
           path: |
             eval/report_*.json
             eval/ablation_*.json
+            eval/reproduce_report.json
           if-no-files-found: warn

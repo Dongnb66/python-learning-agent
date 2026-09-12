@@ -48,9 +48,15 @@
   `review` 后接**条件边**——有薄弱项才进辅导循环，没有则直接收尾（该确定的地方确定，该自主的地方自主）
 - **Provider 可换**：默认 DeepSeek（OpenAI 兼容协议），改 3 行配置即可切到 OpenAI / Claude / 通义千问 / 百炼 MaaS
 - **类型安全**：Pydantic + 类型注解 + FastAPI 自动 OpenAPI 文档
-- **可测试 + 可评测**：94 条单测全程不调用真实 LLM（mock / 脚本化假模型），无需 API Key；
-  另含**防幻觉评测集**（`eval/bad_cases.json` + `scripts/run_eval.py`）——6 类用例 / 4 类断言，
+- **可测试 + 可评测**：146 条单测全程不调用真实 LLM（mock / 脚本化假模型），无需 API Key；
+  另含**防幻觉评测集**（`eval/bad_cases.json` + `scripts/run_eval.py`）——6 类常规用例 / 3 类对抗用例 / 5 类断言，
   量化「编造链接数 = 0、来源可验证率 100%」，可挂 CI 做回归
+- **可观测**：`/api/metrics`（JSON 或 Prometheus 文本）+ `/api/traces/{id}`，
+  每次请求 8 个节点逐节点计时、模型/工具调用计数、失败原因可查；
+  **三道防幻觉约束的拦截动作本身也是指标**（检索空命中 / 代码级拒答 / 拦下编造链接），
+  「没有幻觉」不再是自我声明，而是可核对的一行数字
+- **可复现**：`python scripts/reproduce.py` 一条命令跑完「单测 + 常规评测 + 对抗评测 + 消融实验」，
+  报告带**环境指纹**（Python / 平台 / 依赖版本 / git commit / 是否 Mock），任一环节不达标即非零退出
 - **Docker 一键起**：`docker-compose up`
 
 ## 架构
@@ -78,6 +84,9 @@ flowchart TD
     A --> DB[(SQLite 画像库)]
     WF --> LLM[DeepSeek / OpenAI 兼容端点]
     T --> LLM
+    SG -.每节点 span·计数器.-> OBS[可观测层<br/>/api/metrics · /api/traces]
+    RC -.拒答计数.-> OBS
+    WL -.拦截计数.-> OBS
 ```
 
 > 图中 `WF` 是**确定性工作流**（执行路径由代码固定，保证教学路径可复现）；
@@ -205,6 +214,12 @@ npm run dev
 | POST | `/api/verify/send` | 发送验证码（腾讯云短信 / 邮箱 SMTP） |
 | POST | `/api/verify/check` | 校验验证码 |
 | GET | `/api/verify/channels` | 通道状态（真实下发 or 演示模式） |
+| GET | `/api/metrics` | 运行指标：节点耗时/错误、模型与工具调用数、防幻觉拦截计数（`?format=prometheus` 返回 Prometheus 文本） |
+| GET | `/api/traces` | 最近若干次请求的 `trace_id` |
+| GET | `/api/traces/{trace_id}` | 单次请求链路明细：走了哪些节点、各耗时多少、触发了哪些计数器 |
+
+> 每次 `POST /api/learn` 与 `/api/profile/build` 都会在响应头返回 `X-Trace-Id`，
+> 拿它去 `/api/traces/{id}` 即可回看这次请求的完整链路（出错时同样落盘，便于事后定位是哪一步炸的）。
 
 ### 快速体验
 
@@ -256,10 +271,16 @@ pytest -q
 - `tests/test_resource_guard.py`：**防幻觉三道硬约束**（无命中返回空 / 检索为空不调模型 / 白名单剔除编造链接）
 - `tests/test_anti_hallucination_ablation.py`：**三道光约束的消融回归**——逐道关掉，断言"关掉就会变坏"，
   证明约束不是装饰（关掉白名单 → 编造 URL 确实漏出；关掉阈值 → 脏话题检索不再为空）
-- `tests/test_eval_suite.py`：**评测器自检**（判定逻辑单测 + 离线跑完全部评测用例）
+- `tests/test_eval_suite.py`：**评测器自检**（判定逻辑单测 + 离线跑完全部评测用例 +
+  `expect_refusal` 断言有效性 + 对抗集必须拒答）
+- `tests/test_telemetry.py`：**可观测层**（span 计时/异常标记/嵌套父级、trace 归集与有界存储、
+  Prometheus 渲染、模型调用计数代理，以及**三道守卫的计数器行为**）
+- `tests/test_metrics_api.py`：**指标与链路端点契约**（`X-Trace-Id` 可回查、8 个节点 span 齐全、
+  模型/工具调用计数、`guardrails` 字段、Prometheus 格式）
+- `tests/test_reproduce.py`：**一键复现脚本**（环境指纹字段齐全、达标闸门真的会拦不达标项）
 - `tests/test_tencent_sms.py`：TC3-HMAC-SHA256 签名对照腾讯云官方公开测试向量校验
 
-共 **94 passed**。测试全程不调用真实 LLM（LLM 全部 mock 或用脚本化假模型），无需 API Key。
+共 **146 passed**。测试全程不调用真实 LLM（LLM 全部 mock 或用脚本化假模型），无需 API Key。
 
 ## 评测（防幻觉评测集）
 
@@ -270,13 +291,14 @@ python scripts/run_eval.py          # 零配置：无 Key 自动走离线桩，�
 ```
 
 它会跑 `eval/bad_cases.json` 里的 6 类用例（正常学生 / 姓名专业提取 / 薄弱点 / 冷门话题 /
-目标明确 / 极简输入），对整条管线做 4 类断言：
+目标明确 / 极简输入），对整条管线做 5 类断言：
 
 | 断言 | 含义 |
 |---|---|
 | 产物齐全 | profile / plan / resources / quiz / review 五类都在 |
 | **防幻觉命中率** | 每条推荐 URL 都必须能在本地资料库找到出处，**编造链接数必须为 0** |
 | 拒答正确性 | 资料库无对应话题时，resources 应为空（正确拒答），而不是编造几条凑数 |
+| **强拒答 `expect_refusal`** | 对抗用例要求**必须**为空——区别于「允许为空」，空不空都算过 |
 | 画像准确度 | 姓名 / 专业由正则层保底提取 |
 
 输出控制台报告 + `eval/report_<时间戳>.json`（含防幻觉命中率），退出码非 0 即失败，可直接挂 CI。
@@ -285,15 +307,85 @@ python scripts/run_eval.py          # 零配置：无 Key 自动走离线桩，�
 # 对接真实模型（在 .env 配好 Key 后），额外验证「模型在约束下是否真的不编造」
 python scripts/run_eval.py
 
+# 跑对抗集（资料库完全没有的话题，必须拒答）
+python scripts/run_eval.py --cases eval/adversarial_cases.json
+
 # 对已启动的服务做端到端评测
 uvicorn app.main:app --port 8000
 python scripts/run_eval.py --base http://localhost:8000
 ```
 
-当前结果：**6/6 通过，推荐 24 条资源，编造链接 0 条，防幻觉命中率 100%**。
+当前结果：**常规 6/6 通过，推荐 24 条资源，编造链接 0 条，防幻觉命中率 100%**；
+**对抗 3/3 拒答，推荐 0 条资源，拒答率 100%**。
 
-> 注：`拒答` 分支在离线桩模式下无法通过端到端管线触达（桩的学习计划固定，检索总能命中）。
-> 该分支由 `tests/test_resource_guard.py` 用确定性单测覆盖——**检索为空 → 返回空资源且模型零调用**。
+### 两个被断言本身盖住的坑（已修）
+
+**坑一：`expect_refusal` 从来没被实现。** 对抗集从一开始就声明「本用例必须拒答」，
+但评测器只实现了「允许拒答」（`may_refuse_if_no_match`）——空不空都算过。
+于是即便把三道约束全关掉，对抗用例照样「通过」：mock 返回的资源 URL 全部取自真实资料库，
+`resource_url_must_be_local` 查不出任何问题。**断言没生效 = 没有断言。**
+
+**坑二：就算实现了，这条断言也打不到点。** 检索用的 query 是**学习计划的步骤标题**，
+不是用户原话。离线桩模式下计划是固定桩（永远关于 Python / FastAPI），
+输入「量子计算」也照样命中资料库 → 拒答分支永远走不到。
+
+修法：① 评测器实现 `expect_refusal`；② 对抗用例显式声明 `plan_titles`，
+由 `eval_suite.GraphInvoker` 注入一个只产出该计划的 planner 节点，让对抗话题真正进入检索层
+（注入的计划写在用例数据里，可见可审，不是藏在校验逻辑里的暗门）。
+
+有效性已验证：把「代码级拒答」与「URL 白名单」两道**同时**关掉，对抗集立刻由 3/3 变 0/3 并报出
+`期望拒答（资料库无相关内容），却返回了 4 条资源`。只关一道仍全过 —— 这是纵深防御的正确表现。
+两条断言都固化在 `tests/test_eval_suite.py`（挂在 CI 上）。
+
+> 顺带一提：常规用例走离线桩时**用不到**拒答分支（计划固定、检索必命中），
+> 该分支由 `tests/test_resource_guard.py` 的确定性单测覆盖——
+> **检索为空 → 返回空资源且模型零调用**。
+
+## 可观测性（线上到底在发生什么）
+
+离线评测回答「提交前对不对」，可观测性回答「跑起来之后怎么样」——
+一次请求走了哪些节点、哪个慢、模型调了几次、防幻觉拦了几次。
+
+```bash
+curl http://localhost:8000/api/metrics          # JSON
+curl http://localhost:8000/api/metrics?format=prometheus
+curl http://localhost:8000/api/traces/<trace_id>
+```
+
+埋点在**编排层**（`app/graph.py` 构建图时统一包装节点），Agent 代码保持干净；
+`app/llm.py` 的工厂函数出口套一层计数代理，因此 6 处模型调用点自动全覆盖
+（含 `bind_tools` 之后的 ReAct 循环那一支）。设计细节：
+
+| 设计点 | 为什么这么做 |
+|---|---|
+| 零依赖、纯标准库 | 要能在零 Key、无网环境里跑通与单测；字段命名向 OTel / Prometheus 靠，将来接 OpenTelemetry 只换导出器 |
+| `contextvar` 传递 trace | 一次请求一条 trace，并发请求不串台，且不必把 trace 塞进 `AgentState` 污染状态结构 |
+| trace 有界存储（最近 50 条） | 内存里存全量历史等于埋一个慢性泄漏；长期留存该由外部日志/时序系统承担 |
+| 真实/模拟调用分开计数 | `llm_calls_total` 记全部，`llm_mock_calls_total` 记其中属于 Mock 的部分——离线也能验计数器（否则永远是 0），又不会被误读成真的调了这么多次 API |
+| **守卫动作即指标** | `guardrails` 一节直接给出 `retrieval_empty_total` / `refusals_total` / `fabricated_links_blocked_total`，把「我做了防幻觉」变成可核对的数字 |
+
+## 一键复现
+
+```bash
+python scripts/reproduce.py                # 单测 + 常规评测 + 对抗评测 + 消融，全跑
+python scripts/reproduce.py --skip-pytest  # CI 里用（单测上一步已跑过）
+```
+
+输出控制台汇总表 + `eval/reproduce_report.json`（**已提交进仓库**，
+README 里的数字都能在它里面逐项对照）。报告带环境指纹：
+
+```
+Python     : 3.13.14 (CPython) on Windows-11-10.0.22631-SP0
+git        : main@<commit>  工作区未提交文件 N 个
+Mock 模式  : True
+① 单元测试  PASS  146 passed / 0 failed
+② 常规评测  PASS  6/6 用例 · 编造链接 0 · 防幻觉率 100.0%
+③ 对抗评测  PASS  3/3 用例 · 编造链接 0 · 防幻觉率 100.0%
+④ 防幻觉消融 PASS  全约束组编造链接 0 · 共 4 组对照
+```
+
+没有指纹的指标等于没有上下文——同一份代码在不同 `langgraph` 版本上结果可能不同，
+复现不了就谈不上「可复现」。任一环节不达标即非零退出，可直接当质量闸门用。
 
 ### 消融实验：证明三道约束真的在起作用
 
@@ -338,13 +430,14 @@ python-learning-agent/
 │   ├── config.py          # 配置层：pydantic-settings 读 .env + 注入 os.environ
 │   ├── llm.py             # ChatOpenAI 封装 + function calling 结构化输出（支持 MOCK_LLM 开关）
 │   ├── mock_llm.py        # 离线桩：无 Key 也能跑通全流程（资源取自真实语料）
-│   ├── eval_suite.py      # 防幻觉评测逻辑：用例载入 / 断言判定 / 指标汇总 / 报告落盘
+│   ├── eval_suite.py      # 防幻觉评测逻辑：用例载入 / 断言判定 / 指标汇总 / 报告落盘 / GraphInvoker（可注入计划）
+│   ├── telemetry.py       # 可观测层：节点级 span 计时 / 进程级指标注册表 / trace 有界存储 / Prometheus 渲染
 │   ├── rag.py             # BM25 检索（防幻觉，带相关性阈值，无命中返回空）
 │   ├── db.py              # SQLAlchemy + SQLite：profiles 长期画像 + learning_sessions 学情轨迹
 │   ├── agents/
 │   │   ├── profile_agent.py    # 6 维画像抽取 + 姓名/专业正则
 │   │   ├── planner_agent.py    # 学习计划
-│   │   ├── resource_agent.py   # RAG 资源推荐（拒答 + 白名单双重约束）
+│   │   ├── resource_agent.py   # RAG 资源推荐（拒答 + 白名单双重约束，拦截计数进指标）
 │   │   ├── quiz_agent.py       # 自测题
 │   │   ├── review_agent.py     # 学情复盘
 │   │   ├── memory_agent.py     # 跨会话记忆读写（纯 IO，故障隔离）
@@ -353,11 +446,13 @@ python-learning-agent/
 │       ├── resources.json     # 本地资料库（RAG 语料）
 │       └── skills/            # 技能包（*.md：frontmatter 元数据 + 正文操作指南）
 ├── eval/
-│   ├── bad_cases.json     # 防幻觉评测集（6 类用例 + 断言）
-│   └── adversarial_cases.json  # 对抗性用例（必然空检索，供消融实验用）
+│   ├── bad_cases.json     # 防幻觉评测集（6 类常规用例 + 断言）
+│   ├── adversarial_cases.json  # 对抗用例（资料库无此话题 + 声明 plan_titles，必须拒答）
+│   └── reproduce_report.json   # 一键复现报告（含环境指纹，已提交便于对照）
 ├── scripts/
 │   ├── run_eval.py        # 评测 CLI（零配置，进程内跑完整管线）
-│   └── run_ablation.py    # 消融实验 CLI（逐道关掉约束，验证"关掉就变坏"）
+│   ├── run_ablation.py    # 消融实验 CLI（逐道关掉约束，验证"关掉就变坏"）
+│   └── reproduce.py       # 一键复现：单测 + 常规评测 + 对抗评测 + 消融 + 环境指纹
 ├── frontend/              # React 用户端（9 页面，Vite 代理 /api → 8000）
 ├── screenshots/           # 运行截图（README 引用）
 ├── tests/                 # pytest（mock LLM，无需 key）
@@ -377,7 +472,9 @@ python-learning-agent/
 | RAG 防幻觉 | ✓ | ✓ 代码级三道约束（阈值检索 / 空命中拒答 / URL 白名单） |
 | 跨会话记忆 | × | ✓ 三层记忆（AgentState / profiles / learning_sessions） |
 | 自主决策 | × | ✓ ReAct 工具调用循环（LLM 自决调什么工具、调几轮、何时停） |
-| 效果评测 | × | ✓ 防幻觉评测集（6 用例 / 4 类断言 / JSON 报告 / 可挂 CI）<br>✓ 消融实验（逐道关掉约束，证明约束非装饰） |
+| 效果评测 | × | ✓ 防幻觉评测集（6 常规 + 3 对抗 / 5 类断言 / JSON 报告 / 可挂 CI）<br>✓ 消融实验（逐道关掉约束，证明约束非装饰） |
+| 可观测性 | × | ✓ `/api/metrics`（节点耗时 + 守卫拦截计数）· `/api/traces/{id}` 链路回查 |
+| 可复现性 | × | ✓ `scripts/reproduce.py` 一条命令全跑 + 环境指纹 + 非零退出闸门 |
 | 工程化 | Express + React | FastAPI + 可选前端 |
 | Agent 框架 | 自写 orchestrator | **LangGraph**（含条件边） |
 | Docker 部署 | × | ✓ |
@@ -389,12 +486,15 @@ python-learning-agent/
 - [x] FastAPI 端点 + SQLite 持久化
 - [x] 跨会话三层记忆
 - [x] 自主辅导 Agent（ReAct 工具调用循环）
-- [x] 防幻觉评测集 + 评测 CLI（离线可跑）
+- [x] 防幻觉评测集 + 评测 CLI（离线可跑，含对抗集与 `expect_refusal` 强断言）
 - [x] 防幻觉消融实验 + 回归断言（"关掉就变坏"）
-- [x] pytest 94 passed（mock LLM）+ Docker
-- [ ] 前端（复用 A3 React 版）
+- [x] **可观测性**：节点级 tracing + `/api/metrics` + `/api/traces/{id}` + 守卫计数器
+- [x] **可复现性**：一键复现脚本（含环境指纹）+ 接入 CI
+- [x] pytest 146 passed（mock LLM）+ Docker
+- [x] 前端（复用 A3 React 版，9 页面）
 - [ ] 在线 demo 部署
 - [ ] 演示视频
+- [ ] 向量检索 + rerank（当前为 BM25 单路）
 
 ## License
 

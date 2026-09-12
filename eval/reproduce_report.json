@@ -1,0 +1,116 @@
+{
+  "fingerprint": {
+    "generated_at": "2026-09-12T21:09:05",
+    "python": "3.13.14",
+    "python_impl": "CPython",
+    "platform": "Windows-11-10.0.22631-SP0",
+    "machine": "AMD64",
+    "git_commit": "0613355da43d7dfd336a72f665aefe8cceb596c2",
+    "git_branch": "main",
+    "git_dirty_files": 21,
+    "packages": {
+      "fastapi": "0.141.1",
+      "starlette": "1.6.0",
+      "pydantic": "2.13.5",
+      "langchain": "1.4.0",
+      "langchain-core": "1.6.1",
+      "langgraph": "1.2.11",
+      "langchain-openai": "1.6.0",
+      "langchain-community": "0.4.2",
+      "rank-bm25": "0.2.2",
+      "sqlalchemy": "2.0.52",
+      "httpx": "0.28.1",
+      "pytest": "9.1.1"
+    }
+  },
+  "mock_llm": true,
+  "tests": {
+    "ok": true,
+    "exit_code": 0,
+    "passed": 146,
+    "failed": 0,
+    "errors": 0,
+    "tail": "146 passed, 4 warnings in 8.43s"
+  },
+  "eval_normal": {
+    "cases": 6,
+    "passed": 6,
+    "completeness_pct": 100.0,
+    "resource_count": 24,
+    "fabricated_links": 0,
+    "anti_hallucination_pct": 100.0,
+    "refusal_eligible_cases": 2,
+    "refused_cases": 0,
+    "refusal_rate_pct": 0.0,
+    "avg_duration_ms": 32.5,
+    "max_duration_ms": 84.595,
+    "slowest_nodes_first_case": [
+      {
+        "name": "node.resource",
+        "duration_ms": 51.616
+      },
+      {
+        "name": "node.save_memory",
+        "duration_ms": 14.123
+      },
+      {
+        "name": "node.tutor",
+        "duration_ms": 5.812
+      }
+    ]
+  },
+  "eval_adversarial": {
+    "cases": 3,
+    "passed": 3,
+    "completeness_pct": 100.0,
+    "resource_count": 0,
+    "fabricated_links": 0,
+    "anti_hallucination_pct": 100.0,
+    "refusal_eligible_cases": 3,
+    "refused_cases": 3,
+    "refusal_rate_pct": 100.0,
+    "avg_duration_ms": 16.0,
+    "max_duration_ms": 17.246,
+    "slowest_nodes_first_case": [
+      {
+        "name": "node.save_memory",
+        "duration_ms": 10.637
+      },
+      {
+        "name": "node.tutor",
+        "duration_ms": 2.005
+      },
+      {
+        "name": "node.load_memory",
+        "duration_ms": 1.832
+      }
+    ]
+  },
+  "ablation": {
+    "ok": true,
+    "exit_code": 0,
+    "baseline_fabricated": 0,
+    "groups": [
+      {
+        "group": "① 全约束（现状）",
+        "fabricated": 0,
+        "refused": true
+      },
+      {
+        "group": "② 关掉相关性阈值",
+        "fabricated": 0,
+        "refused": false
+      },
+      {
+        "group": "③ 关掉代码级拒答",
+        "fabricated": 0,
+        "refused": true
+      },
+      {
+        "group": "④ 关掉 URL 白名单",
+        "fabricated": 1,
+        "refused": true
+      }
+    ]
+  }
+}

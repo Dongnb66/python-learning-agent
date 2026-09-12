@@ -16,6 +16,8 @@ import os
 from langchain_core.documents import Document
 from langchain_community.retrievers import BM25Retriever
 
+from app import telemetry
+
 _CORPUS_PATH = os.path.join(os.path.dirname(__file__), "data", "resources.json")
 
 
@@ -71,7 +73,12 @@ def retrieve(query: str, k: int = 4, min_score: float = 0.0) -> list[Document]:
     r = get_retriever(k=k)
     scores = r.vectorizer.get_scores(r.preprocess_func(query))
     ranked = sorted(zip(scores, r.docs), key=lambda pair: pair[0], reverse=True)
+    telemetry.bump(telemetry.C_RETRIEVAL)
     # 消融实验：关掉阈值时退回 BM25Retriever 的原生行为（含 0 分项）
     if _guard_disabled():
         return [doc for _score, doc in ranked[:k]]
-    return [doc for score, doc in ranked[:k] if score > min_score]
+    hits = [doc for score, doc in ranked[:k] if score > min_score]
+    # 第①道守卫的运行时证据：阈值过滤后为空的次数（= 该话题资料库确实没有）
+    if not hits:
+        telemetry.bump(telemetry.C_RETRIEVAL_EMPTY)
+    return hits
