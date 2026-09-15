@@ -30,7 +30,7 @@ This is a Python migration of the A3 Node.js project: **business logic kept 1:1,
 - **LangGraph orchestration**: state graph `load_memory → profile → planner → resource → quiz → review → tutor → save_memory`, with a **conditional edge** after `review` — the tutoring loop only runs when weak points exist. (Deterministic where it should be, autonomous where it must be)
 - **Swappable provider**: DeepSeek by default (OpenAI-compatible); switch to OpenAI / Claude / Qwen / Bailian MaaS by editing 3 lines
 - **Type-safe**: Pydantic + type hints + auto-generated OpenAPI docs
-- **Testable + evaluable**: 146 tests run with no real LLM calls and no API key; plus an **anti-hallucination evaluation suite** (`eval/bad_cases.json` + `scripts/run_eval.py`) — 6 normal + 3 adversarial cases / 5 assertion types quantifying "0 fabricated links, 100% verifiable sources", ready for CI
+- **Testable + evaluable**: 146 tests run with no real LLM calls and no API key; plus an **anti-hallucination evaluation suite** (`eval/bad_cases.json` + `scripts/run_eval.py`) — 6 normal + 3 adversarial cases / 4 assertion types quantifying "0 fabricated links, 100% verifiable sources", ready for CI
 - **Observable**: `/api/metrics` (JSON or Prometheus text) + `/api/traces/{id}` — per-node timings for all 8 nodes, model/tool call counts, failure reasons; **the guard actions themselves are metrics**, so "no hallucinations" is a number you can check rather than a claim
 - **Reproducible**: `python scripts/reproduce.py` runs tests + normal eval + adversarial eval + ablation in one command, with an **environment fingerprint** and a non-zero exit gate
 - **One-command Docker**: `docker-compose up`
@@ -152,8 +152,8 @@ python scripts/run_eval.py          # zero-config: falls back to the offline stu
 python scripts/run_eval.py --cases eval/adversarial_cases.json   # adversarial set: must refuse
 ```
 
-It runs the 6 cases in `eval/bad_cases.json` against the whole pipeline with 5 assertion types:
-artifact completeness; **anti-hallucination rate** (every recommended URL must exist in the local corpus — fabricated links must be 0); correct refusal on unknown topics; **hard refusal** (`expect_refusal` — must be empty, unlike `may_refuse_if_no_match` which merely allows it); and deterministic profile fields.
+It runs the 6 cases in `eval/bad_cases.json` against the whole pipeline with 4 assertion types:
+artifact completeness; **anti-hallucination rate** (every recommended URL must exist in the local corpus — fabricated links must be 0); refusal judgement (`resources` must be empty on unknown topics, while `expect_refusal` cases **must** be empty — unlike `may_refuse_if_no_match`, which merely allows it); and deterministic profile fields.
 
 It prints a report and writes `eval/report_<timestamp>.json` (including the anti-hallucination rate); a non-zero exit code means failure, so it drops straight into CI.
 
@@ -212,7 +212,7 @@ Both repos share the same business design; this repo is the Python rewrite:
 | RAG anti-hallucination | ✓ | ✓ code-level: thresholded retrieval / refusal on empty hits / URL whitelist |
 | Cross-session memory | × | ✓ 3-layer (AgentState / profiles / learning_sessions) |
 | Autonomous decisions | × | ✓ ReAct tool-calling loop |
-| Effect evaluation | × | ✓ anti-hallucination suite (6 normal + 3 adversarial cases / 5 assertion types / JSON report / CI-ready) |
+| Effect evaluation | × | ✓ anti-hallucination suite (6 normal + 3 adversarial cases / 4 assertion types / JSON report / CI-ready) |
 | Observability | × | ✓ `/api/metrics` (node timings + guardrail counters) · `/api/traces/{id}` round-trip |
 | Reproducibility | × | ✓ `scripts/reproduce.py` one command + environment fingerprint + non-zero exit gate |
 | Engineering | Express + React | FastAPI + optional frontend |

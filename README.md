@@ -49,7 +49,7 @@
 - **Provider 可换**：默认 DeepSeek（OpenAI 兼容协议），改 3 行配置即可切到 OpenAI / Claude / 通义千问 / 百炼 MaaS
 - **类型安全**：Pydantic + 类型注解 + FastAPI 自动 OpenAPI 文档
 - **可测试 + 可评测**：146 条单测全程不调用真实 LLM（mock / 脚本化假模型），无需 API Key；
-  另含**防幻觉评测集**（`eval/bad_cases.json` + `scripts/run_eval.py`）——6 类常规用例 / 3 类对抗用例 / 5 类断言，
+  另含**防幻觉评测集**（`eval/bad_cases.json` + `scripts/run_eval.py`）——6 类常规用例 / 3 类对抗用例 / 4 类断言，
   量化「编造链接数 = 0、来源可验证率 100%」，可挂 CI 做回归
 - **可观测**：`/api/metrics`（JSON 或 Prometheus 文本）+ `/api/traces/{id}`，
   每次请求 8 个节点逐节点计时、模型/工具调用计数、失败原因可查；
@@ -291,14 +291,13 @@ python scripts/run_eval.py          # 零配置：无 Key 自动走离线桩，�
 ```
 
 它会跑 `eval/bad_cases.json` 里的 6 类用例（正常学生 / 姓名专业提取 / 薄弱点 / 冷门话题 /
-目标明确 / 极简输入），对整条管线做 5 类断言：
+目标明确 / 极简输入），对整条管线做 4 类断言：
 
 | 断言 | 含义 |
 |---|---|
 | 产物齐全 | profile / plan / resources / quiz / review 五类都在 |
 | **防幻觉命中率** | 每条推荐 URL 都必须能在本地资料库找到出处，**编造链接数必须为 0** |
-| 拒答正确性 | 资料库无对应话题时，resources 应为空（正确拒答），而不是编造几条凑数 |
-| **强拒答 `expect_refusal`** | 对抗用例要求**必须**为空——区别于「允许为空」，空不空都算过 |
+| 拒答判定 | 资料库无对应话题时 resources 应为空（正确拒答）；对抗用例（`expect_refusal`）则要求**必须**为空，区别于「允许为空」 |
 | 画像准确度 | 姓名 / 专业由正则层保底提取 |
 
 输出控制台报告 + `eval/report_<时间戳>.json`（含防幻觉命中率），退出码非 0 即失败，可直接挂 CI。
@@ -472,7 +471,7 @@ python-learning-agent/
 | RAG 防幻觉 | ✓ | ✓ 代码级三道约束（阈值检索 / 空命中拒答 / URL 白名单） |
 | 跨会话记忆 | × | ✓ 三层记忆（AgentState / profiles / learning_sessions） |
 | 自主决策 | × | ✓ ReAct 工具调用循环（LLM 自决调什么工具、调几轮、何时停） |
-| 效果评测 | × | ✓ 防幻觉评测集（6 常规 + 3 对抗 / 5 类断言 / JSON 报告 / 可挂 CI）<br>✓ 消融实验（逐道关掉约束，证明约束非装饰） |
+| 效果评测 | × | ✓ 防幻觉评测集（6 常规 + 3 对抗 / 4 类断言 / JSON 报告 / 可挂 CI）<br>✓ 消融实验（逐道关掉约束，证明约束非装饰） |
 | 可观测性 | × | ✓ `/api/metrics`（节点耗时 + 守卫拦截计数）· `/api/traces/{id}` 链路回查 |
 | 可复现性 | × | ✓ `scripts/reproduce.py` 一条命令全跑 + 环境指纹 + 非零退出闸门 |
 | 工程化 | Express + React | FastAPI + 可选前端 |
