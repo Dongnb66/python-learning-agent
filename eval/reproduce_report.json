@@ -1,24 +1,24 @@
 {
   "fingerprint": {
-    "generated_at": "2026-09-12T21:09:05",
-    "python": "3.13.14",
+    "generated_at": "2026-09-23T02:24:02",
+    "python": "3.12.14",
     "python_impl": "CPython",
     "platform": "Windows-11-10.0.22631-SP0",
     "machine": "AMD64",
-    "git_commit": "0613355da43d7dfd336a72f665aefe8cceb596c2",
+    "git_commit": "078392fef6ad239f9d92d4717d8a44f995f2348a",
     "git_branch": "main",
-    "git_dirty_files": 21,
+    "git_dirty_files": 0,
     "packages": {
       "fastapi": "0.141.1",
       "starlette": "1.6.0",
       "pydantic": "2.13.5",
-      "langchain": "1.4.0",
-      "langchain-core": "1.6.1",
-      "langgraph": "1.2.11",
-      "langchain-openai": "1.6.0",
+      "langchain": "1.4.2",
+      "langchain-core": "1.6.4",
+      "langgraph": "1.2.12",
+      "langchain-openai": "1.6.3",
       "langchain-community": "0.4.2",
       "rank-bm25": "0.2.2",
-      "sqlalchemy": "2.0.52",
+      "sqlalchemy": "2.0.54",
       "httpx": "0.28.1",
       "pytest": "9.1.1"
     }
@@ -27,10 +27,10 @@
   "tests": {
     "ok": true,
     "exit_code": 0,
-    "passed": 146,
+    "passed": 153,
     "failed": 0,
     "errors": 0,
-    "tail": "146 passed, 4 warnings in 8.43s"
+    "tail": "153 passed, 4 warnings in 4.49s"
   },
   "eval_normal": {
     "cases": 6,
@@ -42,20 +42,20 @@
     "refusal_eligible_cases": 2,
     "refused_cases": 0,
     "refusal_rate_pct": 0.0,
-    "avg_duration_ms": 32.5,
-    "max_duration_ms": 84.595,
+    "avg_duration_ms": 25.5,
+    "max_duration_ms": 74.765,
     "slowest_nodes_first_case": [
       {
         "name": "node.resource",
-        "duration_ms": 51.616
+        "duration_ms": 49.789
       },
       {
         "name": "node.save_memory",
-        "duration_ms": 14.123
+        "duration_ms": 11.704
       },
       {
-        "name": "node.tutor",
-        "duration_ms": 5.812
+        "name": "node.load_memory",
+        "duration_ms": 3.99
       }
     ]
   },
@@ -69,20 +69,20 @@
     "refusal_eligible_cases": 3,
     "refused_cases": 3,
     "refusal_rate_pct": 100.0,
-    "avg_duration_ms": 16.0,
-    "max_duration_ms": 17.246,
+    "avg_duration_ms": 15.9,
+    "max_duration_ms": 15.955,
     "slowest_nodes_first_case": [
       {
         "name": "node.save_memory",
-        "duration_ms": 10.637
+        "duration_ms": 9.733
       },
       {
         "name": "node.tutor",
-        "duration_ms": 2.005
+        "duration_ms": 1.987
       },
       {
         "name": "node.load_memory",
-        "duration_ms": 1.832
+        "duration_ms": 1.669
       }
     ]
   },
