@@ -1,12 +1,24 @@
 """RAG 检索层（防幻觉）。
 
-采用 BM25 关键词检索（langchain_community + rank_bm25），
-- 不需要任何 embedding API，离线可用，适合学生本地 Demo 与测试；
-- 检索到的片段会作为「事实依据」传给资源智能体，约束 LLM 只基于
-  真实存在的资料做推荐，从而降低编造链接/资源的风险。
+两条路，一个契约
+----------------
+- **词法路**：BM25（langchain_community + rank_bm25）。
+- **语义路**：Embedding 余弦相似度（可选，需 `EMBED_API_KEY`）。
 
-如需更强语义检索，可把 BM25Retriever 换成 FAISS + Embeddings，
-接口保持一致即可。
+契约始终是同一条：**资料库里确实没有相关内容时返回空列表**，让上层能在代码层
+拒答，而不是把无关材料塞给模型、反过来助推它编造。
+
+为什么需要第二条路（离线基准实测，见 `scripts/retrieval_guard_probe.py`）：
+单路 BM25 下「写 HTTP 接口的 Python 框架推荐」与「量子计算基础」会拿到**完全相同**
+的分数并命中同一篇文档，而前者该命中、后者该拒答 —— 任何绝对阈值 / IDF 覆盖率 /
+稀有词计数都分不开它们。因此混合模式改用**两路一致性**放行：只有词法与语义都认可
+的资料才作为「事实依据」交给模型。
+
+向后兼容
+--------
+未配置 Embedding Key 时（含全部离线单测与 CI），`retrieve()` 走与历史版本
+**逐行为一致**的空白分词 BM25 + `score > min_score` 过滤；语义路是可选增强，
+不是运行前提。
 """
 from __future__ import annotations
 
@@ -19,6 +31,49 @@ from langchain_community.retrievers import BM25Retriever
 from app import telemetry
 
 _CORPUS_PATH = os.path.join(os.path.dirname(__file__), "data", "resources.json")
+
+_CJK_START, _CJK_END = 0x4E00, 0x9FFF
+_RRF_K = 60            # RRF 平滑常数
+
+
+def tokenize(text: str) -> list[str]:
+    """CJK 字符 bigram 分词，与 agent-platform-java 的 Bm25Searcher.tokenize 同一套规则。
+
+    只有混合模式用它。默认空白分词对中文无效：中文没有空格，整句被切成**一个**
+    token，「怎么把项目打包成镜像跑起来」这类自然问法对语料永远不命中（实测同义
+    改写组 Hit@1 = 0%），于是「空命中拒答」退化成「中文一律拒答」。
+    """
+    tokens: list[str] = []
+    asc: list[str] = []
+    low = text.lower()
+
+    def flush() -> None:
+        if asc:
+            tokens.append("".join(asc))
+            asc.clear()
+
+    i, n = 0, len(low)
+    while i < n:
+        ch = low[i]
+        if ch.isascii() and ch.isalnum():
+            asc.append(ch)
+            i += 1
+            continue
+        flush()
+        if _CJK_START <= ord(ch) <= _CJK_END:
+            j = i
+            while j < n and _CJK_START <= ord(low[j]) <= _CJK_END:
+                j += 1
+            run = low[i:j]
+            if len(run) == 1:
+                tokens.append(run)
+            else:
+                tokens.extend(run[k:k + 2] for k in range(len(run) - 1))
+            i = j
+        else:
+            i += 1
+    flush()
+    return tokens
 
 
 def _load_documents() -> list[Document]:
@@ -42,13 +97,40 @@ def _load_documents() -> list[Document]:
 
 
 _retriever: BM25Retriever | None = None
+_bigram_retriever: BM25Retriever | None = None
+_docs: list[Document] | None = None
+_doc_vectors: list[list[float]] | None = None
 
 
 def get_retriever(k: int = 4) -> BM25Retriever:
+    """历史入口：默认（空白）分词的 BM25，行为与引入混合检索前一致。"""
     global _retriever
     if _retriever is None:
         _retriever = BM25Retriever.from_documents(_load_documents(), k=k)
     return _retriever
+
+
+def _all_docs() -> list[Document]:
+    global _docs
+    if _docs is None:
+        _docs = _load_documents()
+    return _docs
+
+
+def _get_bigram_retriever(k: int = 4) -> BM25Retriever:
+    global _bigram_retriever
+    if _bigram_retriever is None:
+        _bigram_retriever = BM25Retriever.from_documents(
+            _all_docs(), k=k, preprocess_func=tokenize
+        )
+    return _bigram_retriever
+
+
+def reset_retriever_cache() -> None:
+    """清掉检索层缓存 —— 供测试与语料热更新使用。"""
+    global _retriever, _bigram_retriever, _docs, _doc_vectors
+    _retriever = _bigram_retriever = None
+    _docs = _doc_vectors = None
 
 
 def _guard_disabled() -> bool:
@@ -59,22 +141,22 @@ def _guard_disabled() -> bool:
     return os.getenv("ABLATE_THRESHOLD", "") == "1"
 
 
-def retrieve(query: str, k: int = 4, min_score: float = 0.0) -> list[Document]:
-    """返回与 query 最相关的 k 个资料片段（按 BM25 分数降序）。
+def _lexical_scores(retriever: BM25Retriever, query: str) -> list[float]:
+    return list(retriever.vectorizer.get_scores(retriever.preprocess_func(query)))
 
-    min_score：相关性下限，默认 0.0。
-        BM25 分数为 0 表示「query 的词一个都没在语料里命中」——这类结果
-        只是凑数的，并不相关。BM25Retriever 原生行为是无论如何都返回
-        top-k（含 0 分项），若直接把它们当作 LLM 的「事实依据」，等于
-        给模型塞了一堆无关材料，反而助推它编造。
-        因此这里做显式分数过滤：资料库确实没有相关内容时返回空列表，
-        上层即可据此**在代码层拒答**，而不是指望模型自觉。
+
+def _legacy_retrieve(query: str, k: int, min_score: float) -> list[Document]:
+    """纯词法路（历史行为）。
+
+    BM25 分数为 0 表示「query 的词一个都没在语料里命中」——这类结果只是凑数。
+    BM25Retriever 原生无论如何都返回 top-k（含 0 分项），直接当「事实依据」用
+    等于给模型塞无关材料，反而助推编造，所以这里显式过滤：确实没有相关内容时
+    返回空列表，上层据此**在代码层拒答**，而不是指望模型自觉。
     """
     r = get_retriever(k=k)
-    scores = r.vectorizer.get_scores(r.preprocess_func(query))
+    scores = _lexical_scores(r, query)
     ranked = sorted(zip(scores, r.docs), key=lambda pair: pair[0], reverse=True)
     telemetry.bump(telemetry.C_RETRIEVAL)
-    # 消融实验：关掉阈值时退回 BM25Retriever 的原生行为（含 0 分项）
     if _guard_disabled():
         return [doc for _score, doc in ranked[:k]]
     hits = [doc for score, doc in ranked[:k] if score > min_score]
@@ -82,3 +164,88 @@ def retrieve(query: str, k: int = 4, min_score: float = 0.0) -> list[Document]:
     if not hits:
         telemetry.bump(telemetry.C_RETRIEVAL_EMPTY)
     return hits
+
+
+def _embed_or_none(texts: list[str]):
+    """取 embedding；语义路未启用或调用异常时返回 None（调用方据此降级）。"""
+    from app.embeddings import get_embedding_provider
+
+    provider = get_embedding_provider()
+    if provider is None:
+        return None, provider
+    try:
+        return provider.embed(texts), provider
+    except Exception as exc:  # 网络 / 额度 / 模型异常 → 降级，不中断管线
+        telemetry.bump(telemetry.C_RETRIEVAL_EMBED_FAIL)
+        print(f"[RAG] Embedding 调用失败，退回纯词法检索：{exc}")
+        return None, provider
+
+
+def _doc_vectors_or_none() -> list[list[float]] | None:
+    global _doc_vectors
+    if _doc_vectors is None:
+        vectors, provider = _embed_or_none([d.page_content for d in _all_docs()])
+        if vectors is None or provider is None:
+            return None
+        _doc_vectors = vectors
+    return _doc_vectors
+
+
+def _hybrid_retrieve(query: str, k: int) -> list[Document] | None:
+    """BM25(bigram) + Embedding 两路召回，RRF 排序，一致性决定是否放行。
+
+    返回 None 表示语义路不可用（未配 Key 或调用失败），调用方退回历史词法路。
+    """
+    from app.embeddings import cosine
+
+    doc_vecs = _doc_vectors_or_none()
+    if doc_vecs is None:
+        return None
+    qvecs, _provider = _embed_or_none([query])
+    if not qvecs:
+        return None
+    qvec = qvecs[0]
+    if not doc_vecs or len(qvec) != len(doc_vecs[0]):
+        # 提供者换型（不同维度模型）后语料向量已失效 —— 降级而不是静默算出 0 分
+        telemetry.bump(telemetry.C_RETRIEVAL_EMBED_FAIL)
+        return None
+
+    docs = _all_docs()
+    bm25 = _get_bigram_retriever(k=k)
+    lex = _lexical_scores(bm25, query)
+    sem = [cosine(qvec, dv) for dv in doc_vecs]
+    telemetry.bump(telemetry.C_RETRIEVAL)
+
+    lex_top = [i for i, _ in sorted(enumerate(lex), key=lambda p: -p[1])[:k] if lex[i] > 0]
+    # 语义路用 top-k **名次**而非绝对余弦当门槛。理由实测过：绝对分数跨模型不可比 ——
+    # 把 provider 换成字符哈希向量后所有余弦都落在 0.18 以下，导致 20/20 全部误拒；
+    # 名次天然尺度无关，也正是绕开「同分冲突」的那把钥匙。
+    sem_top = [i for i, _ in sorted(enumerate(sem), key=lambda p: -p[1])[:k] if sem[i] > 0]
+
+    # 一致性判据：两路都认可才作为事实依据；都不认可 → 空列表 → 上层拒答
+    agree = [i for i in lex_top if i in sem_top]
+    if not agree:
+        telemetry.bump(telemetry.C_RETRIEVAL_EMPTY)
+        return []
+
+    def rrf(i: int) -> float:
+        a = lex_top.index(i) + 1
+        b = sem_top.index(i) + 1
+        return 1.0 / (_RRF_K + a) + 1.0 / (_RRF_K + b)
+
+    return [docs[i] for i in sorted(agree, key=rrf, reverse=True)[:k]]
+
+
+def retrieve(query: str, k: int = 4, min_score: float = 0.0) -> list[Document]:
+    """返回与 query 最相关的资料片段（按相关性降序）；语料确实没有则返回空列表。
+
+    `min_score` 仅在未启用语义路时生效（历史语义）。启用混合检索后放行判据是
+    「两路 top-k 一致性」而非任何绝对分数门槛，因为 BM25 分数与余弦相似度都跨查询/
+    跨模型不可比 —— 前者由 `scripts/retrieval_guard_probe.py` 的同分冲突实测证明，
+    后者由本文件那次 20/20 误拒实测证明。
+    """
+    if not _guard_disabled():
+        hybrid = _hybrid_retrieve(query, k)
+        if hybrid is not None:
+            return hybrid
+    return _legacy_retrieve(query, k, min_score)

@@ -72,6 +72,12 @@ class Settings(BaseSettings):
     llm_temperature: float = 0.3
     llm_max_tokens: int = 2048
 
+    # ---- Embedding（检索层语义路，OpenAI 协议兼容端点）----
+    # 不配置则检索层退回纯 BM25 词法路，行为与历史版本一致（零 Key 可跑）。
+    embed_api_key: str = ""
+    embed_base_url: str = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+    embed_model: str = "text-embedding-v3"
+
     # ---- 数据库 ----
     database_url: str = "sqlite:///./learning_agent.db"
 
@@ -99,3 +105,11 @@ def llm_configured() -> bool:
     后者既不看 .env（除非已注入），也不认识占位符。
     """
     return has_usable_llm_key(get_settings().llm_api_key)
+
+
+def embed_configured() -> bool:
+    """当前是否配置了可用的 Embedding Key（占位符视为未配置）。
+
+    未配置时检索层只走 BM25 词法路 —— 语义路是可选增强，不是运行前提。
+    """
+    return has_usable_llm_key(get_settings().embed_api_key)
