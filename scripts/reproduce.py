@@ -252,6 +252,11 @@ def main() -> int:
     # 全程离线：不依赖 API Key，也不访问网络
     os.environ["MOCK_LLM"] = "1"
     os.environ["TUTOR_MODE"] = "policy"
+    # 语义路也必须关：否则本机 .env 里配了 EMBED_API_KEY 时，检索层会改走
+    # 「两路名次一致性」放行判据，对抗评测里期望拒答的用例就开始看网络结果 ——
+    # 同一个 commit 在有密钥的机器上红、在 CI 上绿，等于没有复现闸门。
+    # 语义路径的质量数字归 scripts/bm25_offline_bench.py 管，不在这里测。
+    os.environ["EMBED_BACKEND"] = "none"
     os.environ.pop("ABLATE_THRESHOLD", None)
     os.environ.pop("ABLATE_REFUSAL", None)
     os.environ.pop("ABLATE_WHITELIST", None)

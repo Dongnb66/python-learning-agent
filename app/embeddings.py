@@ -122,7 +122,9 @@ def get_embedding_provider() -> EmbeddingProvider | None:
     backend = os.getenv("EMBED_BACKEND", "").strip().lower()
     if backend == "hashing":
         _provider = HashingEmbeddings()
-    elif backend in ("", "none") and not embed_configured():
+    elif backend == "none":
+        _provider = None            # 显式关闭语义路：单测与 CI 用它把行为钉在词法降级
+    elif not embed_configured():
         _provider = None
     else:
         s = get_settings()

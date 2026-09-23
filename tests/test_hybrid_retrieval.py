@@ -123,6 +123,15 @@ def test_语义路失败后本进程不再反复重试(monkeypatch):
     assert len(attempts) == 1, f"失败后仍重试了 {len(attempts)} 次"
 
 
+def test_显式关闭语义路优先于已配置的Key(monkeypatch):
+    """回归护栏：曾有逻辑是 `backend in ("","none") and not embed_configured()`，
+    于是本机 .env 配了 key 时 `EMBED_BACKEND=none` 反而不生效 —— 测试模式会被
+    秘密文件悄悄改掉。现在 none 必须无条件关闭语义路。"""
+    monkeypatch.setenv("EMBED_BACKEND", "none")
+    monkeypatch.setattr(emb, "embed_configured", lambda: True)
+    assert emb.get_embedding_provider() is None
+
+
 def test_消融开关仍然绕过一致性判据(monkeypatch):
     """ABLATE_THRESHOLD=1 时退回 BM25Retriever 原生行为（含 0 分项）—— 对照实验依赖它。"""
     monkeypatch.setenv("ABLATE_THRESHOLD", "1")
