@@ -82,6 +82,29 @@ def test_bigram分词对中文产出多token():
     assert rag.tokenize("FastAPI 接口") [0] == "fastapi", "ASCII 段应转小写按词切"
 
 
+def test_查询向量缓存不重复打网络(monkeypatch):
+    """同一查询被 Hit@1/3/5 + MRR + 拒答判定反复调用，评测一轮就是数百次请求。
+    缓存必须保证每段文本只发一次 —— 这条断言直接数发出去的文本。"""
+    sent: list[list[str]] = []
+
+    class _Counting:
+        name = "counting"
+
+        def embed(self, texts):
+            batch = list(texts)
+            sent.append(batch)
+            return [[0.0] * 8 for _ in batch]
+
+    monkeypatch.setattr(emb, "get_embedding_provider", lambda: _Counting())
+    for _ in range(3):
+        rag.retrieve("FastAPI 怎么写接口", k=4)
+        rag.retrieve("LangGraph 怎么做多智能体编排", k=4)
+    flat = [t for batch in sent for t in batch]
+    n_docs = len(rag._all_docs())
+    assert len(flat) == n_docs + 2, f"应只发 {n_docs} 篇语料 + 2 条查询，实发 {len(flat)}"
+    assert len(set(flat)) == len(flat), "存在重复发送的文本，缓存未生效"
+
+
 def test_消融开关仍然绕过一致性判据(monkeypatch):
     """ABLATE_THRESHOLD=1 时退回 BM25Retriever 原生行为（含 0 分项）—— 对照实验依赖它。"""
     monkeypatch.setenv("ABLATE_THRESHOLD", "1")

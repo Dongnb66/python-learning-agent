@@ -58,6 +58,7 @@ C_TOOL_CALLS = "tool_calls_total"  # 自主 Agent 的工具调用次数
 C_RETRIEVAL = "retrieval_calls_total"  # 检索次数
 C_RETRIEVAL_EMPTY = "retrieval_empty_total"  # 检索被阈值过滤后为空的次数（防幻觉第①道）
 C_RETRIEVAL_EMBED_FAIL = "retrieval_embed_fail_total"  # 语义路调用失败、退回纯词法检索的次数
+C_EMBED_CALLS = "embed_texts_total"  # 实际发往 embedding 端的文本条数（去重缓存后）
 C_REFUSALS = "refusals_total"  # 因无事实依据而代码级拒答的次数（防幻觉第②道）
 C_FABRICATED_BLOCKED = "fabricated_links_blocked_total"  # 被白名单拦下的编造链接条数（第③道）
 C_RESOURCES_RETURNED = "resources_returned_total"  # 最终返回给用户的资源条数

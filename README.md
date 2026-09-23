@@ -48,7 +48,7 @@
   `review` 后接**条件边**——有薄弱项才进辅导循环，没有则直接收尾（该确定的地方确定，该自主的地方自主）
 - **Provider 可换**：默认 DeepSeek（OpenAI 兼容协议），改 3 行配置即可切到 OpenAI / Claude / 通义千问 / 百炼 MaaS
 - **类型安全**：Pydantic + 类型注解 + FastAPI 自动 OpenAPI 文档
-- **可测试 + 可评测**：153 条单测全程不调用真实 LLM（mock / 脚本化假模型），无需 API Key；
+- **可测试 + 可评测**：154 条单测全程不调用真实 LLM（mock / 脚本化假模型），无需 API Key；
   另含**防幻觉评测集**（`eval/bad_cases.json` + `scripts/run_eval.py`）——6 类常规用例 / 3 类对抗用例 / 4 类断言，
   量化「编造链接数 = 0、来源可验证率 100%」，可挂 CI 做回归
 - **可观测**：`/api/metrics`（JSON 或 Prometheus 文本）+ `/api/traces/{id}`，
@@ -280,7 +280,7 @@ pytest -q
 - `tests/test_reproduce.py`：**一键复现脚本**（环境指纹字段齐全、达标闸门真的会拦不达标项）
 - `tests/test_tencent_sms.py`：TC3-HMAC-SHA256 签名对照腾讯云官方公开测试向量校验
 
-共 **153 passed**。测试全程不调用真实 LLM（LLM 全部 mock 或用脚本化假模型），无需 API Key。
+共 **154 passed**。测试全程不调用真实 LLM（LLM 全部 mock 或用脚本化假模型），无需 API Key。
 
 ## 评测（防幻觉评测集）
 
@@ -377,7 +377,7 @@ README 里的数字都能在它里面逐项对照）。报告带环境指纹：
 Python     : 3.13.14 (CPython) on Windows-11-10.0.22631-SP0
 git        : main@<commit>  工作区未提交文件 N 个
 Mock 模式  : True
-① 单元测试  PASS  153 passed / 0 failed
+① 单元测试  PASS  154 passed / 0 failed
 ② 常规评测  PASS  6/6 用例 · 编造链接 0 · 防幻觉率 100.0%
 ③ 对抗评测  PASS  3/3 用例 · 编造链接 0 · 防幻觉率 100.0%
 ④ 防幻觉消融 PASS  全约束组编造链接 0 · 共 4 组对照
@@ -489,7 +489,7 @@ python-learning-agent/
 - [x] 防幻觉消融实验 + 回归断言（"关掉就变坏"）
 - [x] **可观测性**：节点级 tracing + `/api/metrics` + `/api/traces/{id}` + 守卫计数器
 - [x] **可复现性**：一键复现脚本（含环境指纹）+ 接入 CI
-- [x] pytest 153 passed（mock LLM）+ Docker
+- [x] pytest 154 passed（mock LLM）+ Docker
 - [x] 前端（复用 A3 React 版，9 页面）
 - [ ] 在线 demo 部署
 - [ ] 演示视频
