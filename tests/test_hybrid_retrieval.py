@@ -105,6 +105,24 @@ def test_查询向量缓存不重复打网络(monkeypatch):
     assert len(set(flat)) == len(flat), "存在重复发送的文本，缓存未生效"
 
 
+def test_语义路失败后本进程不再反复重试(monkeypatch):
+    """真实场景：账户欠费时每次检索都打一发注定失败的 HTTP 请求，既慢又刷日志。
+    第一次失败就该记住并降级。"""
+    attempts: list[int] = []
+
+    class _Arrearage:
+        name = "arrearage"
+
+        def embed(self, texts):
+            attempts.append(len(texts))
+            raise RuntimeError("400 Arrearage")
+
+    monkeypatch.setattr(emb, "get_embedding_provider", lambda: _Arrearage())
+    for _ in range(20):
+        assert rag.retrieve("LangGraph 多智能体编排入门") != []   # 降级后仍走词法路，管线不断
+    assert len(attempts) == 1, f"失败后仍重试了 {len(attempts)} 次"
+
+
 def test_消融开关仍然绕过一致性判据(monkeypatch):
     """ABLATE_THRESHOLD=1 时退回 BM25Retriever 原生行为（含 0 分项）—— 对照实验依赖它。"""
     monkeypatch.setenv("ABLATE_THRESHOLD", "1")

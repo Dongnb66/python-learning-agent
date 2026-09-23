@@ -102,6 +102,7 @@ _docs: list[Document] | None = None
 _doc_vectors: list[list[float]] | None = None
 _embed_cache: dict[str, list[float]] = {}
 _EMBED_CACHE_MAX = 512
+_embed_unavailable = False   # 语义路一旦确认不可用就不再重试，避免每次检索都打一次注定失败的请求
 
 
 def get_retriever(k: int = 4) -> BM25Retriever:
@@ -130,10 +131,11 @@ def _get_bigram_retriever(k: int = 4) -> BM25Retriever:
 
 def reset_retriever_cache() -> None:
     """清掉检索层缓存 —— 供测试与语料热更新使用。"""
-    global _retriever, _bigram_retriever, _docs, _doc_vectors, _embed_cache
+    global _retriever, _bigram_retriever, _docs, _doc_vectors, _embed_cache, _embed_unavailable
     _retriever = _bigram_retriever = None
     _docs = _doc_vectors = None
     _embed_cache.clear()
+    _embed_unavailable = False
 
 
 def _guard_disabled() -> bool:
@@ -178,16 +180,18 @@ def _embed_texts(texts: list[str]) -> list[list[float]] | None:
     """
     from app.embeddings import get_embedding_provider
 
+    global _embed_unavailable
     provider = get_embedding_provider()
-    if provider is None:
+    if provider is None or _embed_unavailable:
         return None
     todo = [t for t in dict.fromkeys(texts) if t not in _embed_cache]
     if todo:
         try:
             fresh = provider.embed(todo)
-        except Exception as exc:  # 网络 / 额度 / 模型异常 → 降级，不中断管线
+        except Exception as exc:  # 网络 / 额度 / 模型异常 → 降级并记住，不再反复重试
             telemetry.bump(telemetry.C_RETRIEVAL_EMBED_FAIL)
-            print(f"[RAG] Embedding 调用失败，退回纯词法检索：{exc}")
+            _embed_unavailable = True
+            print(f"[RAG] Embedding 调用失败，本进程内退回纯词法检索：{exc}")
             return None
         if len(fresh) != len(todo):
             telemetry.bump(telemetry.C_RETRIEVAL_EMBED_FAIL)
