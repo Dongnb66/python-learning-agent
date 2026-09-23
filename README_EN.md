@@ -30,7 +30,7 @@ This is a Python migration of the A3 Node.js project: **business logic kept 1:1,
 - **LangGraph orchestration**: state graph `load_memory → profile → planner → resource → quiz → review → tutor → save_memory`, with a **conditional edge** after `review` — the tutoring loop only runs when weak points exist. (Deterministic where it should be, autonomous where it must be)
 - **Swappable provider**: DeepSeek by default (OpenAI-compatible); switch to OpenAI / Claude / Qwen / Bailian MaaS by editing 3 lines
 - **Type-safe**: Pydantic + type hints + auto-generated OpenAPI docs
-- **Testable + evaluable**: 155 tests run with no real LLM calls and no API key; plus an **anti-hallucination evaluation suite** (`eval/bad_cases.json` + `scripts/run_eval.py`) — 6 normal + 3 adversarial cases / 4 assertion types quantifying "0 fabricated links, 100% verifiable sources", ready for CI
+- **Testable + evaluable**: 156 tests run with no real LLM calls and no API key; plus an **anti-hallucination evaluation suite** (`eval/bad_cases.json` + `scripts/run_eval.py`) — 6 normal + 3 adversarial cases / 4 assertion types quantifying "0 fabricated links, 100% verifiable sources", ready for CI
 - **Observable**: `/api/metrics` (JSON or Prometheus text) + `/api/traces/{id}` — per-node timings for all 8 nodes, model/tool call counts, failure reasons; **the guard actions themselves are metrics**, so "no hallucinations" is a number you can check rather than a claim
 - **Reproducible**: `python scripts/reproduce.py` runs tests + normal eval + adversarial eval + ablation in one command, with an **environment fingerprint** and a non-zero exit gate
 - **One-command Docker**: `docker-compose up`
@@ -141,7 +141,7 @@ pytest -q
 - `tests/test_metrics_api.py`: metrics & trace endpoint contracts (`X-Trace-Id` round-trip, all 8 node spans, model/tool call counts, `guardrails` block, Prometheus format)
 - `tests/test_reproduce.py`: the reproduce script itself (fingerprint fields complete; the gate really rejects failing stages)
 
-**155 passed.** No real LLM is called — no API key needed.
+**156 passed.** No real LLM is called — no API key needed.
 
 ## Evaluation (anti-hallucination suite)
 
@@ -229,7 +229,7 @@ Both repos share the same business design; this repo is the Python rewrite:
 - [x] Anti-hallucination evaluation suite + CLI (runs offline, incl. adversarial set and hard `expect_refusal`)
 - [x] Observability: node-level tracing + `/api/metrics` + `/api/traces/{id}` + guardrail counters
 - [x] Reproducibility: one-command reproduce script (with environment fingerprint) wired into CI
-- [x] pytest 155 passed (mocked LLM, no API key needed) + Docker
+- [x] pytest 156 passed (mocked LLM, no API key needed) + Docker
 - [x] Frontend (reuses the A3 React app, 9 pages)
 - [ ] Hosted online demo
 - [ ] Demo video
