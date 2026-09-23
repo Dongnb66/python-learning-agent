@@ -1,13 +1,13 @@
 {
   "fingerprint": {
-    "generated_at": "2026-09-23T11:49:40",
+    "generated_at": "2026-09-23T12:01:40",
     "python": "3.12.14",
     "python_impl": "CPython",
     "platform": "Windows-11-10.0.22631-SP0",
     "machine": "AMD64",
-    "git_commit": "9d226f27b1cdab0a538e7fdd9d6515c33d9fc614",
+    "git_commit": "d4820e4ccedc99c03a0ed3cf72d0bab1f76052a0",
     "git_branch": "main",
-    "git_dirty_files": 5,
+    "git_dirty_files": 0,
     "packages": {
       "fastapi": "0.141.1",
       "starlette": "1.6.0",
@@ -27,10 +27,10 @@
   "tests": {
     "ok": true,
     "exit_code": 0,
-    "passed": 154,
+    "passed": 155,
     "failed": 0,
     "errors": 0,
-    "tail": "154 passed, 4 warnings in 4.91s"
+    "tail": "155 passed, 4 warnings in 4.80s"
   },
   "eval_normal": {
     "cases": 6,
@@ -42,20 +42,20 @@
     "refusal_eligible_cases": 2,
     "refused_cases": 0,
     "refusal_rate_pct": 0.0,
-    "avg_duration_ms": 38.6,
-    "max_duration_ms": 136.552,
+    "avg_duration_ms": 25.9,
+    "max_duration_ms": 75.837,
     "slowest_nodes_first_case": [
       {
         "name": "node.resource",
-        "duration_ms": 82.933
+        "duration_ms": 45.773
       },
       {
         "name": "node.save_memory",
-        "duration_ms": 33.257
+        "duration_ms": 18.159
       },
       {
         "name": "node.load_memory",
-        "duration_ms": 6.59
+        "duration_ms": 3.981
       }
     ]
   },
@@ -69,20 +69,20 @@
     "refusal_eligible_cases": 3,
     "refused_cases": 3,
     "refusal_rate_pct": 100.0,
-    "avg_duration_ms": 15.6,
-    "max_duration_ms": 16.936,
+    "avg_duration_ms": 15.3,
+    "max_duration_ms": 16.933,
     "slowest_nodes_first_case": [
       {
         "name": "node.save_memory",
-        "duration_ms": 11.045
+        "duration_ms": 9.638
       },
       {
         "name": "node.tutor",
-        "duration_ms": 1.939
+        "duration_ms": 1.992
       },
       {
         "name": "node.load_memory",
-        "duration_ms": 1.607
+        "duration_ms": 1.744
       }
     ]
   },
