@@ -88,6 +88,33 @@ def main() -> int:
     n = len(corpus)
 
     qs = json.load(io.open(_QUERIES_FILE, encoding="utf-8"))
+
+    # ---- 语料指纹校验：评测集与被测索引是强耦合的，不一致就显式失败 ----
+    # 三份 RAG 失效模式文档都只讲「索引版本」，没人讲「基准确也带版本」。
+    # 但 expected 存的是语料下标：语料增删改任一篇，答案就不再成立 ——
+    # 而脚本不会报错，只会安静地算出一堆错数字。所以这里主动核对。
+    fp_expect = qs.get("_语料指纹")
+    if fp_expect:
+        from hashlib import sha256
+        per = sorted(
+            (d.metadata.get("url", ""),
+             sha256((d.metadata.get("title", "") + "\n" + d.page_content).encode("utf-8")).hexdigest())
+            for d in corpus
+        )
+        joined = "\n".join(f"{u}\t{h}" for u, h in per)
+        fp_now = {"篇数": len(corpus), "汇总sha256": sha256(joined.encode("utf-8")).hexdigest()[:16]}
+        if fp_now != {"篇数": fp_expect.get("篇数"), "汇总sha256": fp_expect.get("汇总sha256")}:
+            print("❌ 语料指纹不符 —— 标注集的 expected 下标可能已经失效，本次结果不可信。")
+            print(f"   查询集记录: {fp_expect.get('篇数')} 篇 / {fp_expect.get('汇总sha256')}")
+            print(f"   当前语料  : {fp_now['篇数']} 篇 / {fp_now['汇总sha256']}")
+            print("   若语料变更是有意的，请重新核对 expected 下标后运行：")
+            print("     python scripts/stamp_corpus_fingerprint.py")
+            return 2
+        print(f"语料指纹 ✅ {fp_now['汇总sha256']}（{fp_now['篇数']} 篇，与标注集记录一致）")
+    else:
+        print("⚠️ 查询集没有语料指纹 —— 无法判断 expected 下标是否仍成立。")
+        print("   建议运行：python scripts/stamp_corpus_fingerprint.py")
+
     labeled = [("A", x["q"], x["expected"]) for x in qs["A"]] + \
               [("B", x["q"], x["expected"]) for x in qs["B"]]
     c_list = [x["q"] for x in qs["C"]]
@@ -126,6 +153,12 @@ def main() -> int:
             "误拒数": sum(1 for q, e in items if refused(q)),
         }
     tot = {
+        "口径": (
+            f"Hit@k / MRR 只在 {allq} 条**有标注答案**的查询上计算（A+B）；"
+            f"正确拒答率只在 {len(c_list)} 条**语料外**查询上计算（C）；"
+            f"另有 {len(z_list)} 条争议单列。"
+            "⚠️ 这是两种不同口径 —— 不得把命中率和拒答率合成一个数对外报。"
+        ),
         "Hit@1%": pct(sum(hit_at_k(q, e, 1) for _g, q, e in labeled), allq),
         "Hit@3%": pct(sum(hit_at_k(q, e, 3) for _g, q, e in labeled), allq),
         "Hit@5%": pct(sum(hit_at_k(q, e, 5) for _g, q, e in labeled), allq),
