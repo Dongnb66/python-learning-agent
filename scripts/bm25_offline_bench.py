@@ -39,6 +39,10 @@ from app import rag  # noqa: E402  —— 直接用生产代码路径，不重�
 # 生产参数：app/agents/resource_agent.py 用 k=4；min_score 默认 2.0（实测选出，非拍脑袋）
 K_PROD = 4
 MIN_SCORE_PROD = 2.0
+# MRR 用比 Hit@5 更大的候选池，才能区分「排第 6」和「根本没召回」。
+# 但注意：混合路径下 k 会改变算法（见 hit_at_k 的说明），所以这个值也只是
+# 「比生产 k 更大的一次检索」，不等于生产行为 —— 报告里要标清楚。
+K_MRR = 10
 _QUERIES_FILE = os.path.join(_ROOT, "eval", "retrieval_queries.json")
 
 _URL2IDX: dict[str, int] = {}
@@ -50,12 +54,24 @@ def doc_index(doc) -> int:
 
 
 def hit_at_k(query: str, expected: int, k: int) -> bool:
-    return any(doc_index(d) == expected
-               for d in rag.retrieve(query, k=k, min_score=MIN_SCORE_PROD))
+    """Hit@k —— 注意 k 只当**截断**，不当**传给检索的 k**。
+
+    ⚠️ 这里踩过一个真 bug（2026-09-30 修）：原来是 `rag.retrieve(query, k=k)`，
+    在纯词法路径下没问题（k 只是取前几条），但**混合路径下 k 会改变算法本身** ——
+    `_hybrid_retrieve` 的放行条件是 `agree = lex_top ∩ sem_top`，传 k=1 等于要求
+    「同一篇文档既是词法第一、又是语义第一」，与生产（resource_agent 用 k=4）
+    根本不是同一个检索。当时的症状：真语义模型下 Hit@1 被算成 52.8%，
+    而同一个检索按生产 k=4 取首条是 80.6%。
+
+    所以统一用**生产 k** 检索，再按需要的 k 截断。
+    """
+    docs = rag.retrieve(query, k=max(K_PROD, k), min_score=MIN_SCORE_PROD)[:k]
+    return any(doc_index(d) == expected for d in docs)
 
 
 def mrr(query: str, expected: int) -> float:
-    for rank, d in enumerate(rag.retrieve(query, k=10, min_score=MIN_SCORE_PROD), 1):
+    """MRR —— 同样用生产 k 检索后取排序，理由见 `hit_at_k` 的说明。"""
+    for rank, d in enumerate(rag.retrieve(query, k=K_MRR, min_score=MIN_SCORE_PROD), 1):
         if doc_index(d) == expected:
             return 1.0 / rank
     return 0.0

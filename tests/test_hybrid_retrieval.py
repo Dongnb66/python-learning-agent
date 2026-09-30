@@ -77,7 +77,7 @@ def test_embedding异常时降级为词法路(monkeypatch):
     class _Boom:
         name = "boom"
 
-        def embed(self, texts):
+        def embed(self, texts, is_query=False):
             raise RuntimeError("网络不可达")
 
     monkeypatch.setattr(emb, "get_embedding_provider", lambda: _Boom())
@@ -101,7 +101,7 @@ def test_查询向量缓存不重复打网络(monkeypatch):
     class _Counting:
         name = "counting"
 
-        def embed(self, texts):
+        def embed(self, texts, is_query=False):
             batch = list(texts)
             sent.append(batch)
             return [[0.0] * 8 for _ in batch]
@@ -116,6 +116,29 @@ def test_查询向量缓存不重复打网络(monkeypatch):
     assert len(set(flat)) == len(flat), "存在重复发送的文本，缓存未生效"
 
 
+def test_查询与文档的缓存键互相隔离(monkeypatch):
+    """回归护栏：BGE 这类模型对 query 加检索指令、对文档不加，同一段文本在两种
+    角色下的向量本来就不同。若查询与文档共用缓存键，先被当作文档嵌入过的文本
+    再当查询用时会直接命中旧向量 —— 指令静默失效，而且指标上看不出来。"""
+    calls: list[tuple[list[str], bool]] = []
+
+    class _Recording:
+        name = "recording"
+
+        def embed(self, texts, is_query=False):
+            calls.append((list(texts), is_query))
+            return [[float(len(t))] * 8 for t in texts]
+
+    monkeypatch.setattr(emb, "get_embedding_provider", lambda: _Recording())
+    same = "FastAPI 怎么写接口"
+    rag.retrieve(same, k=4)                      # 该文本先进语料侧（若有重合）与查询侧
+    rag.retrieve(same, k=4)
+    q_calls = [c for c in calls if c[1]]
+    assert q_calls, "查询侧应以 is_query=True 调用（BGE 需要检索指令）"
+    # 第二次检索同一查询不应再发查询侧请求
+    assert sum(len(t) for t, iq in calls if iq) == 1, "查询向量缓存未生效"
+
+
 def test_语义路失败后本进程不再反复重试(monkeypatch):
     """真实场景：账户欠费时每次检索都打一发注定失败的 HTTP 请求，既慢又刷日志。
     第一次失败就该记住并降级。"""
@@ -124,7 +147,7 @@ def test_语义路失败后本进程不再反复重试(monkeypatch):
     class _Arrearage:
         name = "arrearage"
 
-        def embed(self, texts):
+        def embed(self, texts, is_query=False):
             attempts.append(len(texts))
             raise RuntimeError("400 Arrearage")
 

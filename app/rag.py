@@ -184,12 +184,15 @@ def _legacy_retrieve(query: str, k: int, min_score: float) -> list[Document]:
     return hits
 
 
-def _embed_texts(texts: list[str]) -> list[list[float]] | None:
+def _embed_texts(texts: list[str], is_query: bool = False) -> list[list[float]] | None:
     """按文本缓存 embedding，语义路不可用或调用失败时返回 None。
 
     缓存是必需的而非优化：一次检索评测会对同一批查询重复请求数百次
     （Hit@1/3/5 + MRR + 拒答判定各一次，再加延迟采样循环），不缓存就是把
     同一句话反复发给远程 API —— 既烧额度，测出来的延迟也全是网络抖动。
+
+    `is_query=True` 走独立缓存键：BGE 这类模型对查询加检索指令、对文档不加，
+    同一段文本在两种角色下的向量本来就不同，混用缓存会串味。
     """
     from app.embeddings import get_embedding_provider
 
@@ -197,10 +200,11 @@ def _embed_texts(texts: list[str]) -> list[list[float]] | None:
     provider = get_embedding_provider()
     if provider is None or _embed_unavailable:
         return None
-    todo = [t for t in dict.fromkeys(texts) if t not in _embed_cache]
+    ck = (lambda t: "q:" + t) if is_query else (lambda t: "d:" + t)
+    todo = [t for t in dict.fromkeys(texts) if ck(t) not in _embed_cache]
     if todo:
         try:
-            fresh = provider.embed(todo)
+            fresh = provider.embed(todo, is_query=is_query)
         except Exception as exc:  # 网络 / 额度 / 模型异常 → 降级并记住，不再反复重试
             telemetry.bump(telemetry.C_RETRIEVAL_EMBED_FAIL)
             _embed_unavailable = True
@@ -210,11 +214,11 @@ def _embed_texts(texts: list[str]) -> list[list[float]] | None:
             telemetry.bump(telemetry.C_RETRIEVAL_EMBED_FAIL)
             return None
         for text, vec in zip(todo, fresh):
-            _embed_cache[text] = vec
+            _embed_cache[ck(text)] = vec
         while len(_embed_cache) > _EMBED_CACHE_MAX:
             _embed_cache.pop(next(iter(_embed_cache)))
         telemetry.bump(telemetry.C_EMBED_CALLS, len(todo))
-    return [_embed_cache[t] for t in texts]
+    return [_embed_cache[ck(t)] for t in texts]
 
 
 def _doc_vectors_or_none() -> list[list[float]] | None:
@@ -237,7 +241,7 @@ def _hybrid_retrieve(query: str, k: int) -> list[Document] | None:
     doc_vecs = _doc_vectors_or_none()
     if doc_vecs is None:
         return None
-    qvecs = _embed_texts([query])
+    qvecs = _embed_texts([query], is_query=True)
     if not qvecs:
         return None
     qvec = qvecs[0]
