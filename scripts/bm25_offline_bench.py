@@ -175,6 +175,26 @@ def main() -> int:
         "误拒数": sum(1 for _g, q, e in labeled if refused(q)),
     }
 
+    # ---- 口径二：剔除「语料未覆盖」的查询 ----
+    # 这些查询问的内容在期望文档里**根本不存在**（人工复核确认，见 eval/label_audit_20260930.md），
+    # 因此天然不可能命中。它们计在分母里会系统性拉低 Hit@1。
+    # **不删数据、不改分组** —— 只同时报两个口径，让读者自己判断。
+    uncovered = {x["q"] for x in (qs.get("A", []) + qs.get("B", [])) if "_语料未覆盖" in x}
+    labeled2 = [(g, q, e) for g, q, e in labeled if q not in uncovered]
+    allq2 = len(labeled2)
+    tot2 = {
+        "说明": (
+            f"剔除 {len(uncovered)} 条「语料未覆盖」查询后的口径（{allq2} 条）。"
+            "这些查询问的内容在期望文档里不存在，天然不可能命中 —— "
+            "含它们与不含它们都应报，不得只报其一。"
+        ),
+        "剔除的查询": sorted(uncovered),
+        "Hit@1%": pct(sum(hit_at_k(q, e, 1) for _g, q, e in labeled2), allq2) if allq2 else 0.0,
+        "Hit@3%": pct(sum(hit_at_k(q, e, 3) for _g, q, e in labeled2), allq2) if allq2 else 0.0,
+        "Hit@5%": pct(sum(hit_at_k(q, e, 5) for _g, q, e in labeled2), allq2) if allq2 else 0.0,
+        "MRR": round(sum(mrr(q, e) for _g, q, e in labeled2) / allq2, 3) if allq2 else 0.0,
+    }
+
     # ---- 应拒答 ----
     c_rows = [{"query": q, "refused": refused(q),
                "top": [doc_index(d) for d in rag.retrieve(q, k=K_PROD)][:3]} for q in c_list]
@@ -258,6 +278,10 @@ def main() -> int:
             g, d["n"], d["Hit@1%"], d["Hit@3%"], d["Hit@5%"], d["MRR"], d["误拒数"]))
     print("合计      Hit@1/3/5 = %s%% / %s%% / %s%%   MRR %.3f   误拒 %d (%s%%)" % (
         tot["Hit@1%"], tot["Hit@3%"], tot["Hit@5%"], tot["MRR"], tot["误拒数"], pct(tot["误拒数"], allq)))
+    if len(uncovered):
+        print("  ↳ 剔除 %d 条「语料未覆盖」后（%d 条） Hit@1/3/5 = %s%% / %s%% / %s%%   MRR %.3f"
+              % (len(uncovered), allq2, tot2["Hit@1%"], tot2["Hit@3%"], tot2["Hit@5%"], tot2["MRR"]))
+        print("     （这 %d 条问的内容在期望文档里不存在，天然不可能命中；两个口径都应报）" % len(uncovered))
     print("C 组正确拒答 %d/%d = %s%%   争议 %d/%d" % (c_ok, len(c_list), pct(c_ok, len(c_list)), z_ok, len(z_list)))
     print("随机基线  Hit@1/3/5 = %s%% / %s%% / %s%%   MRR %.3f" % (
         out["随机基线_固定种子"]["Hit@1%"], out["随机基线_固定种子"]["Hit@3%"],
