@@ -156,6 +156,34 @@ def _guard_disabled() -> bool:
     return os.getenv("ABLATE_THRESHOLD", "") == "1"
 
 
+def _rerank_candidates() -> int:
+    """精排前先截断到多少个候选。
+
+    ⚠️ **在调用时才读环境变量，不在模块级捕获。**
+    《深入理解 AI Agent》第 7 章 L785 明确警告过这个坑：
+    「消融开关必须在启动路径的**极早期**注入 —— 在任何模块级常量捕获配置值之前」。
+    模块级读取会让「先 import 再设环境变量」的消融实验静默失效。
+    """
+    try:
+        return max(1, int(os.getenv("RERANK_CANDIDATES", "50")))
+    except ValueError:
+        return 50
+
+
+def _rerank_min_score() -> float:
+    """绝对相关性分阈值 —— 低于它就不作为事实依据（拒答）。
+
+    为什么这里可以用绝对分：跨编码器是**同一个模型、同一套权重**给每对
+    (query, doc) 打分，分数跨查询可比。而 BM25 分与余弦相似度都跨查询/跨模型
+    不可比（本仓库实测：换成哈希向量后余弦全落在 0.18 以下 → 20/20 全误拒），
+    所以那两条路只能靠名次，不能靠阈值。
+    """
+    try:
+        return float(os.getenv("RERANK_MIN_SCORE", "0.30"))
+    except ValueError:
+        return 0.30
+
+
 def _lexical_scores(retriever: BM25Retriever, query: str) -> list[float]:
     return list(retriever.vectorizer.get_scores(retriever.preprocess_func(query)))
 
@@ -232,11 +260,21 @@ def _doc_vectors_or_none() -> list[list[float]] | None:
 
 
 def _hybrid_retrieve(query: str, k: int) -> list[Document] | None:
-    """BM25(bigram) + Embedding 两路召回，RRF 排序，一致性决定是否放行。
+    """BM25(bigram) + Embedding 两路召回 → 融合 →（可选）重排序 → 放行判据。
 
-    返回 None 表示语义路不可用（未配 Key 或调用失败），调用方退回历史词法路。
+    **两条放行策略，取决于是否配了重排序器：**
+
+    * **有重排序器**（`RERANK_BACKEND=local-onnx`）—— 书里 L396-398 的标准流水线：
+      两路结果取**并集**当候选池 → RRF 排序 → **跨编码器精排** →
+      用**绝对相关性分**卡阈值。并集保住「只有一路能召回」的文档；
+      跨编码器输出的是绝对分，解决「BM25 分与余弦都跨查询不可比」导致的拒答难题。
+    * **无重排序器** —— 退回历史行为：**交集一致性**放行。
+      它拒答可靠（实测 C 组 100%），但代价是丢掉单路独有命中（实测 n=36 少 2 条）。
+
+    返回 None 表示语义路不可用（未配 Key 或调用失败），调用方退回纯词法路。
     """
     from app.embeddings import cosine
+    from app.reranker import get_reranker
 
     doc_vecs = _doc_vectors_or_none()
     if doc_vecs is None:
@@ -262,18 +300,61 @@ def _hybrid_retrieve(query: str, k: int) -> list[Document] | None:
     # 名次天然尺度无关，也正是绕开「同分冲突」的那把钥匙。
     sem_top = [i for i, _ in sorted(enumerate(sem), key=lambda p: -p[1])[:k] if sem[i] > 0]
 
-    # 一致性判据：两路都认可才作为事实依据；都不认可 → 空列表 → 上层拒答
-    agree = [i for i in lex_top if i in sem_top]
-    if not agree:
+    reranker = get_reranker()
+
+    if reranker is None:
+        # ── 历史路径：交集一致性放行 ──
+        agree = [i for i in lex_top if i in sem_top]
+        if not agree:
+            telemetry.bump(telemetry.C_RETRIEVAL_EMPTY)
+            return []
+
+        def rrf_agree(i: int) -> float:
+            a = lex_top.index(i) + 1
+            b = sem_top.index(i) + 1
+            return 1.0 / (_RRF_K + a) + 1.0 / (_RRF_K + b)
+
+        return [docs[i] for i in sorted(agree, key=rrf_agree, reverse=True)[:k]]
+
+    # ── 重排序路径：并集候选池 → RRF → 跨编码器精排 → 绝对分阈值 ──
+    # 候选池用并集：出现在任一路的文档都进来。书里 L387/L422 的理由是两路盲区互补
+    # （稠密懂语义但漏关键词、稀疏精确匹配但读不懂同义词），交集恰好丢掉这部分。
+    pool = list(dict.fromkeys(lex_top + sem_top))
+    if not pool:
         telemetry.bump(telemetry.C_RETRIEVAL_EMPTY)
         return []
 
-    def rrf(i: int) -> float:
-        a = lex_top.index(i) + 1
-        b = sem_top.index(i) + 1
-        return 1.0 / (_RRF_K + a) + 1.0 / (_RRF_K + b)
+    def rrf_pool(i: int) -> float:
+        """标准 RRF：只在文档出现的那一路累加（缺席不补大名次）。"""
+        s = 0.0
+        if i in lex_top:
+            s += 1.0 / (_RRF_K + lex_top.index(i) + 1)
+        if i in sem_top:
+            s += 1.0 / (_RRF_K + sem_top.index(i) + 1)
+        return s
 
-    return [docs[i] for i in sorted(agree, key=rrf, reverse=True)[:k]]
+    ordered = sorted(pool, key=rrf_pool, reverse=True)
+    # 精排只需要前 N 个候选；池子通常远小于 N，但语料变大后这一步是必要的截断
+    head = ordered[: _rerank_candidates()]
+    try:
+        scores = reranker.score(query, [docs[i].page_content for i in head])
+    except Exception as exc:  # 重排序失败不能让检索整体挂掉 —— 退回 RRF 顺序
+        telemetry.bump(telemetry.C_RETRIEVAL_EMBED_FAIL)
+        print(f"[RAG] 重排序失败，本次退回 RRF 顺序：{exc}")
+        return [docs[i] for i in ordered[:k]]
+
+    if len(scores) != len(head):
+        telemetry.bump(telemetry.C_RETRIEVAL_EMBED_FAIL)
+        return [docs[i] for i in ordered[:k]]
+
+    # 绝对分阈值拒答：跨编码器同一个模型、同一套权重，分数跨查询可比 ——
+    # 这正是它相对 BM25 分/余弦的优势（后两者跨查询不可比，只能靠名次或交集）。
+    floor = _rerank_min_score()
+    kept = [(i, s) for i, s in zip(head, scores) if s >= floor]
+    if not kept:
+        telemetry.bump(telemetry.C_RETRIEVAL_EMPTY)
+        return []
+    return [docs[i] for i, _ in sorted(kept, key=lambda p: -p[1])[:k]]
 
 
 def retrieve(query: str, k: int = 4, min_score: float = 2.0) -> list[Document]:

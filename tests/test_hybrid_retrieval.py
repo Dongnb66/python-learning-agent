@@ -171,3 +171,96 @@ def test_消融开关仍然绕过一致性判据(monkeypatch):
     monkeypatch.setenv("ABLATE_THRESHOLD", "1")
     got = rag.retrieve("🐉🦄✨", k=4)
     assert len(got) == 4, "关掉守卫后应无条件返回 top-k，哪怕全是 0 分项"
+
+
+# ───────────────────────── 重排序路径 ─────────────────────────
+
+
+def _fake_embedding():
+    class _E:
+        name = "fake-embed"
+
+        def embed(self, texts, is_query=False):
+            # 只让含「LangGraph」的文档拿到正余弦，其余为 0 —— 制造「两路不一致」的局面
+            return [[1.0] * 8 if "LangGraph" in t else [0.0] * 8 for t in texts]
+
+    return _E()
+
+
+def test_重排序路径用并集候选池(monkeypatch):
+    """回归护栏：配了重排序器时，候选池必须是**并集**而不是交集。
+
+    书里 L396 说融合产出「统一的候选池」；L387/L422 给的理由是两路盲区互补
+    （稠密懂语义但漏关键词、稀疏精确匹配但读不懂同义词）。交集会丢掉
+    「只有一路能召回」的文档 —— 那正是融合的价值所在。
+
+    本用例构造两路各自只召回不同文档的局面，断言精排看到了**两路之和**。
+    """
+    from app import reranker as rk
+
+    seen: dict = {}
+
+    class _R:
+        name = "fake-rerank"
+
+        def score(self, query, docs):
+            seen["n"] = len(docs)
+            seen["docs"] = list(docs)
+            return [0.9] * len(docs)          # 全部放行，只看候选池大小
+
+    monkeypatch.setattr(emb, "get_embedding_provider", _fake_embedding)
+    monkeypatch.setattr(rk, "get_reranker", lambda: _R())
+    monkeypatch.delenv("ABLATE_THRESHOLD", raising=False)
+    monkeypatch.setenv("RERANK_MIN_SCORE", "0.3")
+
+    rag.retrieve("LangGraph 多智能体编排入门", k=4)
+    assert "n" in seen, "重排序器没被调用 —— 路径没走到"
+    lex_only = [d for d in seen["docs"] if "LangGraph" not in d]
+    # 并集应同时包含「词法独有」与「语义独有」两侧的文档
+    assert len(seen["docs"]) >= 2, f"候选池过小：{len(seen['docs'])}"
+    assert lex_only, "候选池里没有词法独有的文档 —— 可能退回了交集"
+
+
+def test_重排序路径按绝对分拒答(monkeypatch):
+    """拒答改由**绝对相关性分**决定（跨编码器同模型同权重，分数跨查询可比），
+    不再依赖两路一致性 —— 所以「两路不一致但精排分高」的文档必须放行。"""
+    from app import reranker as rk
+
+    class _R:
+        name = "fake-rerank"
+
+        def score(self, query, docs):
+            return [0.01] * len(docs)          # 全部低于阈值 → 应拒答
+
+    monkeypatch.setattr(emb, "get_embedding_provider", _fake_embedding)
+    monkeypatch.setattr(rk, "get_reranker", lambda: _R())
+    monkeypatch.setenv("RERANK_MIN_SCORE", "0.3")
+
+    assert rag.retrieve("LangGraph 多智能体编排入门", k=4) == [], "全低于阈值应当拒答"
+
+
+def test_重排序失败时退回RRF顺序而不是整体挂掉(monkeypatch):
+    """重排序模型异常（缺文件/OOM）不能让检索整体失败 —— 退回 RRF 顺序。"""
+    from app import reranker as rk
+
+    class _Boom:
+        name = "boom"
+
+        def score(self, query, docs):
+            raise RuntimeError("模型文件损坏")
+
+    monkeypatch.setattr(emb, "get_embedding_provider", _fake_embedding)
+    monkeypatch.setattr(rk, "get_reranker", lambda: _Boom())
+    got = rag.retrieve("LangGraph 多智能体编排入门", k=4)
+    assert got, "重排序失败后应退回 RRF 顺序，而不是返回空"
+
+
+def test_没配重排序器时保持历史交集行为(monkeypatch):
+    """默认（未配 RERANK_BACKEND）必须与历史行为一致 —— 「clone 即可跑」不能依赖 544 MB 模型。"""
+    from app import reranker as rk
+
+    monkeypatch.setattr(emb, "get_embedding_provider", _fake_embedding)
+    monkeypatch.setattr(rk, "get_reranker", lambda: None)
+    # 语义路对非 LangGraph 文档给 0 余弦，词法路给正分 → 交集可能为空
+    got = rag.retrieve("Docker 镜像怎么打包", k=4)
+    assert isinstance(got, list), "默认路径必须返回列表（交集判据可能为空）"

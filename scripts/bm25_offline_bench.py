@@ -126,12 +126,21 @@ def main() -> int:
     # 语义路是否可用只决定"要不要再加一条 embedding 路"，不改变词法路的分词。
     # （这段原来按 hybrid 真假来选分词器，bigram 上生产后标签就失真了。）
     from app.embeddings import get_embedding_provider
+    from app.reranker import get_reranker
     sample = "Python 变量和循环怎么入门"
     hybrid = get_embedding_provider() is not None
+    reranker = get_reranker() if hybrid else None
     active = rag._get_bigram_retriever(k=K_PROD)
+    if not hybrid:
+        route = "纯词法（bigram BM25 + score > min_score）"
+    elif reranker is not None:
+        # 书里 L396-398 的标准流水线：并集候选池 → RRF → 跨编码器精排 → 绝对分阈值
+        route = (f"混合 + 重排序（并集候选池 → RRF → {reranker.name} 精排 → "
+                 f"绝对分阈值 {rag._rerank_min_score():.2f}）")
+    else:
+        route = "混合（bigram BM25 + Embedding + RRF + 两路一致性交集）"
     diag = {"query": sample, "tokens": list(active.preprocess_func(sample)),
-            "生效路径": "混合（bigram BM25 + Embedding + RRF + 两路一致性）" if hybrid
-                        else "纯词法（bigram BM25 + score > min_score）",
+            "生效路径": route,
             "tokenizer": getattr(active.preprocess_func, "__name__", "callable")}
 
     t0 = time.perf_counter()
