@@ -45,8 +45,14 @@ def _state(plan: Plan | None) -> dict:
 # 1. 检索层：相关性阈值
 # --------------------------------------------------------------------------- #
 def test_retrieve_returns_empty_for_topic_absent_from_corpus() -> None:
-    """资料库里没有量子计算 → 必须返回空，而不是硬塞 4 条不相关结果。"""
-    assert retrieve("量子计算基础") == []
+    """资料库里确实没有的主题 → 必须返回空，而不是硬塞 4 条不相关结果。
+
+    例子刻意选**无争议**的语料外主题。「量子计算基础」曾经也用在这里，但 bigram
+    分词上线后它会命中「计算机网络」—— 标注集本身把这类查询列为**争议样本**
+    （产品语义可争议，不并入 C 组主口径）。用它当拒答例子会让测试的通过与否
+    取决于分词器切得好不好，而不是拒答逻辑对不对。
+    """
+    assert retrieve("摩托车发动机化油器怎么清洗") == []
     assert retrieve("我想学点编程") == []
 
 
@@ -67,7 +73,7 @@ def test_empty_retrieval_refuses_and_never_calls_llm() -> None:
     """
     fake_llm = MagicMock()
     with patch("app.agents.resource_agent.get_structured_model", fake_llm):
-        out = build_resources_node(_state(_plan("量子纠缠的拓扑保护与容错")))
+        out = build_resources_node(_state(_plan("乳腺癌的靶向治疗方案有哪些")))
         fake_llm.assert_not_called()
 
     assert out["resources"] == []

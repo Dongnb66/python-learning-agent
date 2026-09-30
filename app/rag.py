@@ -14,11 +14,21 @@
 稀有词计数都分不开它们。因此混合模式改用**两路一致性**放行：只有词法与语义都认可
 的资料才作为「事实依据」交给模型。
 
-向后兼容
---------
-未配置 Embedding Key 时（含全部离线单测与 CI），`retrieve()` 走与历史版本
-**逐行为一致**的空白分词 BM25 + `score > min_score` 过滤；语义路是可选增强，
-不是运行前提。
+词法路的分词
+------------
+**两条路都统一用 CJK bigram 分词**（`tokenize()`）。
+
+这里曾经是「未配 Key 就退回空白分词，与历史版本逐行为一致」。实测证明那是个缺陷：
+中文没有空格，空白分词会把整句切成**一个** token，于是标注集 B 组（同义改写 24 条）
+Hit@1 = 0%、**所有中文问法都被「空命中拒答」挡掉** —— 也就是「空命中拒答」退化成了
+「中文一律拒答」，而 C 组 100% 的拒答率只是这个故障的另一面。
+
+bigram 是纯本地算法，**不需要 Key、不需要网络**，没有任何理由把它挂在语义路后面。
+
+实测（`scripts/bm25_offline_bench.py` 口径，`min_score=2.0`）：
+合计 Hit@1 **22.2% → 77.8%**，C 组正确拒答 95.5%。
+
+未配置 Embedding Key 时，`retrieve()` 走这条词法路；语义路是可选增强，不是运行前提。
 """
 from __future__ import annotations
 
@@ -151,14 +161,17 @@ def _lexical_scores(retriever: BM25Retriever, query: str) -> list[float]:
 
 
 def _legacy_retrieve(query: str, k: int, min_score: float) -> list[Document]:
-    """纯词法路（历史行为）。
+    """纯词法路（未启用语义路时的唯一路径）。
+
+    用 **bigram** 分词，不用空白分词：中文没有空格，空白分词会把整句切成一个 token，
+    中文查询永远零命中 —— 那不是「正确拒答」，是「中文检索不工作」。
 
     BM25 分数为 0 表示「query 的词一个都没在语料里命中」——这类结果只是凑数。
     BM25Retriever 原生无论如何都返回 top-k（含 0 分项），直接当「事实依据」用
     等于给模型塞无关材料，反而助推编造，所以这里显式过滤：确实没有相关内容时
     返回空列表，上层据此**在代码层拒答**，而不是指望模型自觉。
     """
-    r = get_retriever(k=k)
+    r = _get_bigram_retriever(k=k)
     scores = _lexical_scores(r, query)
     ranked = sorted(zip(scores, r.docs), key=lambda pair: pair[0], reverse=True)
     telemetry.bump(telemetry.C_RETRIEVAL)
@@ -259,13 +272,17 @@ def _hybrid_retrieve(query: str, k: int) -> list[Document] | None:
     return [docs[i] for i in sorted(agree, key=rrf, reverse=True)[:k]]
 
 
-def retrieve(query: str, k: int = 4, min_score: float = 0.0) -> list[Document]:
+def retrieve(query: str, k: int = 4, min_score: float = 2.0) -> list[Document]:
     """返回与 query 最相关的资料片段（按相关性降序）；语料确实没有则返回空列表。
 
-    `min_score` 仅在未启用语义路时生效（历史语义）。启用混合检索后放行判据是
-    「两路 top-k 一致性」而非任何绝对分数门槛，因为 BM25 分数与余弦相似度都跨查询/
-    跨模型不可比 —— 前者由 `scripts/retrieval_guard_probe.py` 的同分冲突实测证明，
-    后者由本文件那次 20/20 误拒实测证明。
+    `min_score` 仅在未启用语义路时生效。默认 **2.0** 是实测选出来的，不是拍的：
+    在 bigram 分词下把「语料外查询被误放行」从 2/22 压到 1/22（C 组正确拒答
+    90.9% → 95.5%），而合计 Hit@1 保持 77.8% 不变 —— **零召回代价换来拒答提升**。
+    （对比数据见 `scripts/retrieval_guard_probe.py` 的判据选型表。）
+
+    启用混合检索后放行判据改为「两路 top-k 一致性」而非绝对分数门槛，因为 BM25 分数
+    与余弦相似度都跨查询/跨模型不可比 —— 前者由 `scripts/retrieval_guard_probe.py`
+    的同分冲突实测证明，后者由本文件那次 20/20 误拒实测证明。
     """
     if not _guard_disabled():
         hybrid = _hybrid_retrieve(query, k)

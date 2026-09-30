@@ -138,7 +138,9 @@ def main() -> int:
     print(f"通过数            : {s['passed']}  ({s['completeness_pct']}%)")
     print(f"推荐资源总数      : {s['resource_count']}")
     print(f"编造链接数        : {s['fabricated_links']}")
-    print(f"防幻觉命中率       : {s['anti_hallucination_pct']}%  (来源可验证的资源占比)")
+    ah = s["anti_hallucination_pct"]
+    ah_text = "N/A（本次未返回任何资源，该指标不适用）" if ah is None else f"{ah}%  (来源可验证的资源占比)"
+    print(f"防幻觉命中率       : {ah_text}")
     if mock_mode:
         print("拒答正确率         : 见 tests/test_resource_guard.py")
         print("                     （mock 模式下计划为固定桩，检索总能命中，")

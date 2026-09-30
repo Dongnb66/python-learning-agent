@@ -223,9 +223,10 @@ def _print_table(report: dict[str, Any]) -> None:
         if s is None:
             continue
         res = "PASS" if s["passed"] == s["cases"] else "FAIL"
+        ah = s["anti_hallucination_pct"]
         print(f"{label:<16}{res:<28}"
               f"{s['passed']}/{s['cases']} 用例 · 编造链接 {s['fabricated_links']} · "
-              f"防幻觉率 {s['anti_hallucination_pct']}% · 均值 {s['avg_duration_ms']}ms")
+              f"防幻觉率 {'N/A' if ah is None else f'{ah}%'} · 均值 {s['avg_duration_ms']}ms")
 
     ab = report.get("ablation")
     if ab is not None:

@@ -88,6 +88,35 @@ def test_summarize_computes_anti_hallucination_rate() -> None:
     assert s["refusal_rate_pct"] == 0.0
 
 
+def test_summarize_anti_hallucination_is_na_when_no_resources() -> None:
+    """回归护栏：一条资源都没返回时，防幻觉率必须是 None（不适用），**不能记 100**。
+
+    否则「把所有问题都拒答」就能在这一项刷满分，掩盖了「什么资源都没给出」。
+    制衡项是 completeness_pct：全拒答会让需要资源的用例全部失败，它必然掉下来。
+    """
+    results = [
+        {"pass": False, "metrics": {"resource_count": 0, "fabricated_links": [],
+                                    "refusal_expected": True, "refused": True}},
+    ]
+    s = eval_suite.summarize(results)
+    assert s["resource_count"] == 0
+    assert s["anti_hallucination_pct"] is None, "分母为 0 时不得记 100 分"
+    assert s["anti_hallucination_applicable"] is False
+    # 拒答率仍要单独给出，不能因为不适用就一起吞掉
+    assert s["refusal_rate_pct"] == 100.0
+
+
+def test_summarize_marks_anti_hallucination_applicable_with_resources() -> None:
+    """有资源返回时 applicable 为 True，比例正常计算。"""
+    results = [
+        {"pass": True, "metrics": {"resource_count": 2, "fabricated_links": [],
+                                   "refusal_expected": False, "refused": False}},
+    ]
+    s = eval_suite.summarize(results)
+    assert s["anti_hallucination_applicable"] is True
+    assert s["anti_hallucination_pct"] == 100.0
+
+
 # --------------------------------------------------------------------------- #
 # 2. 端到端：离线桩跑完整管线 + 全部评测用例
 # --------------------------------------------------------------------------- #

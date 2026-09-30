@@ -36,9 +36,9 @@ if _ROOT not in sys.path:
 
 from app import rag  # noqa: E402  —— 直接用生产代码路径，不重写 BM25
 
-# 生产参数：app/agents/resource_agent.py 用 k=4、min_score 默认 0.0
+# 生产参数：app/agents/resource_agent.py 用 k=4；min_score 默认 2.0（实测选出，非拍脑袋）
 K_PROD = 4
-MIN_SCORE_PROD = 0.0
+MIN_SCORE_PROD = 2.0
 _QUERIES_FILE = os.path.join(_ROOT, "eval", "retrieval_queries.json")
 
 _URL2IDX: dict[str, int] = {}
@@ -78,13 +78,17 @@ def main() -> int:
     z_list = [x["q"] for x in qs["C_争议"]]
     allq = len(labeled)
 
-    # ---- 分词诊断：报告本次实际生效的那条路 ----
+    # ---- 分词诊断：报告本次**实际生效**的那条路 ----
+    # 注意：词法路现在**无条件**用 bigram —— 空白分词会把中文整句切成一个 token。
+    # 语义路是否可用只决定"要不要再加一条 embedding 路"，不改变词法路的分词。
+    # （这段原来按 hybrid 真假来选分词器，bigram 上生产后标签就失真了。）
     from app.embeddings import get_embedding_provider
     sample = "Python 变量和循环怎么入门"
     hybrid = get_embedding_provider() is not None
-    active = rag._get_bigram_retriever(k=K_PROD) if hybrid else rag.get_retriever(k=K_PROD)
+    active = rag._get_bigram_retriever(k=K_PROD)
     diag = {"query": sample, "tokens": list(active.preprocess_func(sample)),
-            "生效路径": "混合（bigram BM25 + Embedding + RRF + 两路一致性）" if hybrid else "纯词法（空白分词 BM25）",
+            "生效路径": "混合（bigram BM25 + Embedding + RRF + 两路一致性）" if hybrid
+                        else "纯词法（bigram BM25 + score > min_score）",
             "tokenizer": getattr(active.preprocess_func, "__name__", "callable")}
 
     t0 = time.perf_counter()

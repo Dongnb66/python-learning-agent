@@ -136,7 +136,10 @@ def summarize(results: list[dict[str, Any]]) -> dict[str, Any]:
     fabricated = sum(len(r.get("metrics", {}).get("fabricated_links", [])) for r in results)
 
     verifiable = resources - fabricated
-    anti_hallucination = 100.0 * verifiable / resources if resources else 100.0
+    # 分母为 0 时这个比例**不适用**，不能记 100 分。
+    # 否则「把所有问题都拒答」就能在这一项拿满分，掩盖了「一条资源都没给出」这一事实。
+    # 制衡项是 completeness_pct：全拒答会让需要资源的用例全部失败，它必然掉下来。
+    anti_hallucination = 100.0 * verifiable / resources if resources else None
 
     refusal_eligible = [r for r in results if r.get("metrics", {}).get("refusal_expected")]
     refused = [r for r in refusal_eligible if r.get("metrics", {}).get("refused")]
@@ -148,7 +151,8 @@ def summarize(results: list[dict[str, Any]]) -> dict[str, Any]:
         "completeness_pct": round(100.0 * passed / n, 1) if n else 0.0,
         "resource_count": resources,
         "fabricated_links": fabricated,
-        "anti_hallucination_pct": round(anti_hallucination, 1),
+        "anti_hallucination_pct": None if anti_hallucination is None else round(anti_hallucination, 1),
+        "anti_hallucination_applicable": resources > 0,
         "refusal_eligible_cases": len(refusal_eligible),
         "refused_cases": len(refused),
         "refusal_rate_pct": None if refusal_rate is None else round(refusal_rate, 1),

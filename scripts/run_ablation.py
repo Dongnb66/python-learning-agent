@@ -172,7 +172,7 @@ def main() -> int:
     print(f"资料库真值 {len(local_urls)} 条 URL · 把模型换成「永远编造链接」的假模型")
     print("=" * 78)
 
-    # 三组 × 假模型（真模型不会必然幻觉，测不出白名单）
+    # 四组 × 假模型（真模型不会必然幻觉，测不出白名单）
     groups: list[tuple[str, set[str]]] = [
         ("① 全约束（现状）", set()),
         ("② 关掉相关性阈值", {"threshold"}),
@@ -180,49 +180,70 @@ def main() -> int:
         ("④ 关掉 URL 白名单", {"whitelist"}),
     ]
 
-    rows: list[dict[str, Any]] = []
-    for label, disabled in groups:
-        m = _run_group(disabled, _TITLE_ONLY_ITEM)
-        fabricated_normal = [u for u in m["normal_urls"] if u and u not in local_urls]
-        fabricated_dirty = [u for u in m["dirty_urls"] if u and u not in local_urls]
-        fabricated = len(fabricated_normal) + len(fabricated_dirty)
-        row = {
-            "group": label,
-            "disabled": sorted(disabled),
-            "正常输入_资源数": m["normal_count"],
-            "脏输入_资源数": m["dirty_count"],
-            "脏输入_是否拒答": m["dirty_is_refused"],
-            "编造链接_总数": fabricated,
-        }
-        rows.append(row)
+    # 白名单有**两条**拦截路径，必须分别覆盖：
+    #   A. 标题命中白名单 → **改写** URL（resource_agent.py 的 elif 分支）
+    #   B. 标题与 URL 都不命中 → **丢弃**（else 分支），并计入 FABRICATED_BLOCKED
+    # 早期版本只跑了 A，`_FAKE_HALLUCINATED` 是死代码，B 从未被消融覆盖 —— 现在补上。
+    scenarios: list[tuple[str, str, str, list[dict[str, Any]]]] = [
+        ("A", "改写", "标题真实 / URL 编造 → 覆盖白名单的『改写』分支", _TITLE_ONLY_ITEM),
+        ("B", "丢弃", "标题与 URL 都编造 → 覆盖白名单的『丢弃』分支", _FAKE_HALLUCINATED),
+    ]
 
-        print(f"\n[{label}]")
-        print(f"   正常输入 → 推荐 {m['normal_count']} 条")
-        print(f"   脏输入   → 推荐 {m['dirty_count']} 条  {'（✅ 正确拒答）' if m['dirty_is_refused'] else '（❌ 未拒答）'}")
-        print(f"   编造链接 → {fabricated} 条  {'✅' if fabricated == 0 else '❌ 幻觉出界'}")
-        if args.verbose:
-            for u in fabricated_normal + fabricated_dirty:
-                print(f"       漏出的编造链接: {u}")
+    rows: list[dict[str, Any]] = []
+    for sc_id, sc_branch, sc_desc, fake_items in scenarios:
+        print("\n" + "=" * 78)
+        print(f"场景 {sc_id}（{sc_branch}分支）：{sc_desc}")
+        print("=" * 78)
+        for label, disabled in groups:
+            m = _run_group(disabled, fake_items)
+            fabricated_normal = [u for u in m["normal_urls"] if u and u not in local_urls]
+            fabricated_dirty = [u for u in m["dirty_urls"] if u and u not in local_urls]
+            fabricated = len(fabricated_normal) + len(fabricated_dirty)
+            row = {
+                "scenario": sc_id,
+                "scenario_branch": sc_branch,
+                "scenario_desc": sc_desc,
+                "group": label,
+                "disabled": sorted(disabled),
+                "正常输入_资源数": m["normal_count"],
+                "脏输入_资源数": m["dirty_count"],
+                "脏输入_是否拒答": m["dirty_is_refused"],
+                "编造链接_总数": fabricated,
+            }
+            rows.append(row)
+
+            print(f"\n  [{label}]")
+            print(f"     正常输入 → 推荐 {m['normal_count']} 条")
+            print(f"     脏输入   → 推荐 {m['dirty_count']} 条  {'（✅ 正确拒答）' if m['dirty_is_refused'] else '（❌ 未拒答）'}")
+            print(f"     编造链接 → {fabricated} 条  {'✅' if fabricated == 0 else '❌ 幻觉出界'}")
+            if args.verbose:
+                for u in fabricated_normal + fabricated_dirty:
+                    print(f"         漏出的编造链接: {u}")
 
     # ---- 对比总结 ----
-    base = rows[0]
+    # 基线 = 每个场景的「① 全约束」组，两个场景都必须为零
+    base_rows = [r for r in rows if r["group"] == groups[0][0]]
+    baseline_fabricated = sum(r["编造链接_总数"] for r in base_rows)
+
     print("\n" + "=" * 78)
     print("对比总结")
     print("=" * 78)
-    hdr = f"{'实验组':<18}{'正常/脏输入资源数':<20}{'脏输入拒答':<12}{'编造链接漏出':<14}"
-    print(hdr)
-    print("-" * 78)
-    for r in rows:
-        cnt = f"{r['正常输入_资源数']}/{r['脏输入_资源数']}"
-        refuse = "是" if r["脏输入_是否拒答"] else "否"
-        fab = r["编造链接_总数"]
-        print(f"{r['group']:<18}{cnt:<20}{refuse:<12}{fab}{'  ⚠️' if fab else '  ✅'}")
+    for sc_id, sc_branch, sc_desc, _ in scenarios:
+        print(f"\n场景 {sc_id}（{sc_branch}分支）")
+        print(f"{'实验组':<18}{'正常/脏输入资源数':<20}{'脏输入拒答':<12}{'编造链接漏出':<14}")
+        print("-" * 78)
+        for r in [x for x in rows if x["scenario"] == sc_id]:
+            cnt = f"{r['正常输入_资源数']}/{r['脏输入_资源数']}"
+            refuse = "是" if r["脏输入_是否拒答"] else "否"
+            fab = r["编造链接_总数"]
+            print(f"{r['group']:<18}{cnt:<20}{refuse:<12}{fab}{'  ⚠️' if fab else '  ✅'}")
 
     print("\n结论：")
     print("  · 关掉「相关性阈值」→ 脏输入不再为空（0 分项被当事实依据）")
     print("  · 关掉「代码级拒答」→ 空检索仍会调用模型，把判断权交还给模型")
     print("  · 关掉「URL 白名单」→ 假模型编造的链接直接漏给用户")
-    print("  全约束组编造链接必须为 0；任一组关掉后应看到指标变坏。")
+    print("    场景 A 漏的是『改写失败』，场景 B 漏的是『未被丢弃』—— 两条分支各自独立被证明。")
+    print("  两个场景的全约束组编造链接都必须为 0；任一组关掉后应看到指标变坏。")
 
     out = _ROOT / "eval"
     out.mkdir(parents=True, exist_ok=True)
@@ -234,15 +255,22 @@ def main() -> int:
             "mock": True,
             "model": "fake-always-hallucinate",
             "local_urls": len(local_urls),
+            "scenarios": [
+                {"id": sc_id, "whitelist_branch": sc_branch, "desc": sc_desc}
+                for sc_id, sc_branch, sc_desc, _ in scenarios
+            ],
+            "baseline_fabricated": baseline_fabricated,
             "rows": rows,
-            "note": "对机制层做消融：把模型换成『永远编造链接』的假模型，逐道关掉约束，观察编造链接是否漏出。这样测的是约束本身，不受模型能力波动影响。",
+            "note": "对机制层做消融：把模型换成『永远编造链接』的假模型，逐道关掉约束，观察编造链接是否漏出。"
+                    "两个场景分别覆盖 URL 白名单的『改写』与『丢弃』两条拦截路径。"
+                    "这样测的是约束本身，不受模型能力波动影响。",
         }, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
     print(f"\n报告已写入: {path}")
 
     _set_guards(set())
-    return 1 if base["编造链接_总数"] > 0 else 0
+    return 1 if baseline_fabricated > 0 else 0
 
 
 if __name__ == "__main__":

@@ -42,3 +42,8 @@ push-to-github.bat
 # 前端
 frontend/node_modules/
 frontend/dist/
+
+# 运行期产生的资源存储
+app/data/a3_store.json
+# 本地改动备份
+*.bak-*

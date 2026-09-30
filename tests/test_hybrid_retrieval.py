@@ -25,13 +25,24 @@ def _reset_caches():
     _clear()
 
 
-def test_未配置语义路时行为与历史版本一致(monkeypatch):
-    """没配 EMBED_API_KEY → 走空白分词 BM25，守卫契约不变。"""
+def test_未配置语义路时走bigram词法路且守卫契约不变(monkeypatch):
+    """没配 EMBED_API_KEY → 走 **bigram** 词法路，守卫契约不变。
+
+    回归护栏：这里曾经断言 `retrieve("量子计算基础") == []`，那是空白分词时代的产物
+    —— 它之所以成立，只是因为中文整句被切成一个 token、什么都匹配不上，**并不是
+    拒答逻辑在起作用**。换成 bigram 后该查询会命中「计算机网络」，而标注集本身就把
+    「量子计算基础」列为**争议样本**（产品语义可争议，不并入 C 组主口径）。
+    所以改用真正语料外、无争议的例子。
+    """
     monkeypatch.delenv("EMBED_BACKEND", raising=False)
     monkeypatch.setattr(emb, "get_embedding_provider", lambda: None)
-    assert rag.retrieve("量子计算基础") == []
+    # ① 语料确实没有的主题 → 必须拒答
+    assert rag.retrieve("摩托车发动机化油器怎么清洗") == []
+    # ② 语料内主题 → 必须命中
     docs = rag.retrieve("LangGraph 多智能体编排入门")
     assert docs and docs[0].metadata["title"] == "LangGraph 多智能体编排入门"
+    # ③ 中文同义改写也要能召回 —— 这正是空白分词做不到、bigram 才做到的
+    assert rag.retrieve("零基础学门语言，先搞懂变量和循环"), "bigram 应能召回同义改写的中文问法"
 
 
 def test_词法路零命中时混合路也必须拒答():
@@ -70,9 +81,9 @@ def test_embedding异常时降级为词法路(monkeypatch):
             raise RuntimeError("网络不可达")
 
     monkeypatch.setattr(emb, "get_embedding_provider", lambda: _Boom())
-    # 降级后等价于历史行为：语料内仍能命中，语料外仍拒答
+    # 降级后仍走 bigram 词法路：语料内仍能命中，语料外仍拒答
     assert rag.retrieve("LangGraph 多智能体编排入门") != []
-    assert rag.retrieve("量子计算基础") == []
+    assert rag.retrieve("摩托车发动机化油器怎么清洗") == []
 
 
 def test_bigram分词对中文产出多token():

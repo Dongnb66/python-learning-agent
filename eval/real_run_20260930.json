@@ -1,0 +1,571 @@
+{
+  "title": "python-learning-agent · 真实模型运行留痕",
+  "generated_at": "2026-09-30T18:29:30",
+  "purpose": "回应面试必考题：「你测的是 Agent 还是你的 mock？」",
+  "mode": "真实模型（MOCK_LLM=0 · TUTOR_MODE=llm）",
+  "provider": {
+    "base_url": "https://api.deepseek.com/v1",
+    "model": "deepseek-chat"
+  },
+  "mock_flag_prometheus": "learning_agent_mock_llm 0",
+  "metrics_snapshot": {
+    "mock_llm": false,
+    "uptime_seconds": 14.8,
+    "counters": {
+      "requests_total": 1,
+      "llm_calls_total": 7,
+      "retrieval_calls_total": 9,
+      "retrieval_empty_total": 6,
+      "refusals_total": 1,
+      "tool_calls_total": 6
+    },
+    "spans": {
+      "llm.Plan": {
+        "count": 1,
+        "total_ms": 3130.06,
+        "avg_ms": 3130.06,
+        "errors": 0
+      },
+      "llm.Profile": {
+        "count": 1,
+        "total_ms": 1855.98,
+        "avg_ms": 1855.98,
+        "errors": 0
+      },
+      "llm.Quiz": {
+        "count": 1,
+        "total_ms": 1746.15,
+        "avg_ms": 1746.15,
+        "errors": 0
+      },
+      "llm.Review": {
+        "count": 1,
+        "total_ms": 3186.78,
+        "avg_ms": 3186.78,
+        "errors": 0
+      },
+      "llm.chat": {
+        "count": 3,
+        "total_ms": 2955.82,
+        "avg_ms": 985.27,
+        "errors": 0
+      },
+      "node.load_memory": {
+        "count": 1,
+        "total_ms": 16.11,
+        "avg_ms": 16.11,
+        "errors": 0
+      },
+      "node.planner": {
+        "count": 1,
+        "total_ms": 3131.57,
+        "avg_ms": 3131.57,
+        "errors": 0
+      },
+      "node.profile": {
+        "count": 1,
+        "total_ms": 2215.12,
+        "avg_ms": 2215.12,
+        "errors": 0
+      },
+      "node.quiz": {
+        "count": 1,
+        "total_ms": 1748.78,
+        "avg_ms": 1748.78,
+        "errors": 0
+      },
+      "node.resource": {
+        "count": 1,
+        "total_ms": 147.59,
+        "avg_ms": 147.59,
+        "errors": 0
+      },
+      "node.review": {
+        "count": 1,
+        "total_ms": 3188.28,
+        "avg_ms": 3188.28,
+        "errors": 0
+      },
+      "node.save_memory": {
+        "count": 1,
+        "total_ms": 15.54,
+        "avg_ms": 15.54,
+        "errors": 0
+      },
+      "node.tutor": {
+        "count": 1,
+        "total_ms": 2968.38,
+        "avg_ms": 2968.38,
+        "errors": 0
+      },
+      "tool.count_history_sessions": {
+        "count": 1,
+        "total_ms": 2.12,
+        "avg_ms": 2.12,
+        "errors": 0
+      },
+      "tool.get_student_profile": {
+        "count": 1,
+        "total_ms": 1.81,
+        "avg_ms": 1.81,
+        "errors": 0
+      },
+      "tool.load_skill": {
+        "count": 1,
+        "total_ms": 2.31,
+        "avg_ms": 2.31,
+        "errors": 0
+      },
+      "tool.search_learning_resources": {
+        "count": 3,
+        "total_ms": 1.21,
+        "avg_ms": 0.4,
+        "errors": 0
+      }
+    },
+    "llm_calls": {
+      "total": 7,
+      "mock": 0,
+      "real": 7,
+      "errors": 0
+    },
+    "guardrails": {
+      "retrieval_empty_total": 6,
+      "refusals_total": 1,
+      "fabricated_links_blocked_total": 0
+    }
+  },
+  "sample_request": {
+    "user_id": "realrun-20260930",
+    "input": "我想学 Python，基础比较弱，每天能学 1 小时",
+    "http_status": 200,
+    "plan_steps": [
+      {
+        "step": 1,
+        "title": "环境搭建与首次运行",
+        "description": "安装 Python 与 VS Code（或使用在线环境），跑通第一个 print('Hello') 程序，理解变量、输入输出与代码如何被执行。目标：消除对编程的陌生感，能独立运行并修改一段 5 行以内的小程序。",
+        "est_minutes": 60
+      },
+      {
+        "step": 2,
+        "title": "核心语法：变量、类型与运算",
+        "description": "学习变量命名、数字/字符串/布尔类型、基本运算符与字符串拼接，配合 10~15 道小练习（如计算器、单位换算）。重点是把语法写熟，形成手感。",
+        "est_minutes": 60
+      },
+      {
+        "step": 3,
+        "title": "流程控制：条件与循环",
+        "description": "掌握 if/elif/else 与 for/while 循环，理解缩进与布尔判断。练习：猜数字游戏、九九乘法表、判断闰年。这是编程思维的第一个关键门槛，务必动手写而非只看。",
+        "est_minutes": 60
+      },
+      {
+        "step": 4,
+        "title": "数据结构：列表、字典与函数",
+        "description": "学习列表/字典的增删改查、遍历，以及用 def 定义函数、参数与返回值。练习：成绩统计、通讯录小程序。目标：能把重复逻辑封装成函数，代码开始有结构。",
+        "est_minutes": 60
+      },
+      {
+        "step": 5,
+        "title": "文件读写与错误处理",
+        "description": "学习 open() 读写文本文件、try/except 捕获异常，完成一个「读取文件→处理数据→写回结果」的小脚本（如统计单词出现次数）。这是从练习走向实用程序的一步。",
+        "est_minutes": 60
+      },
+      {
+        "step": 6,
+        "title": "方向探索与阶段复盘",
+        "description": "用 30 分钟浏览数据分析（pandas）、Web（Flask）、自动化（requests/openpyxl）三个方向的入门示例，各跑一个最小 demo；再用 30 分钟复盘前 5 步的薄弱点，选定一个方向作为下一阶段目标。",
+        "est_minutes": 60
+      }
+    ],
+    "resource_count": 0,
+    "reply_head": ""
+  },
+  "trace_sample": {
+    "ok": true,
+    "trace": {
+      "trace_id": "65afea2612ad",
+      "duration_ms": 13438.712,
+      "status": "ok",
+      "span_count": 21,
+      "counters": {
+        "llm_calls_total": 7,
+        "retrieval_calls_total": 9,
+        "retrieval_empty_total": 6,
+        "refusals_total": 1,
+        "tool_calls_total": 6
+      },
+      "spans": [
+        {
+          "name": "node.load_memory",
+          "duration_ms": 16.107,
+          "status": "ok",
+          "attrs": {
+            "kind": "io"
+          }
+        },
+        {
+          "name": "llm.Profile",
+          "duration_ms": 1855.984,
+          "status": "ok",
+          "parent": "node.profile",
+          "attrs": {
+            "mock": false
+          }
+        },
+        {
+          "name": "node.profile",
+          "duration_ms": 2215.12,
+          "status": "ok",
+          "attrs": {
+            "kind": "llm"
+          }
+        },
+        {
+          "name": "llm.Plan",
+          "duration_ms": 3130.063,
+          "status": "ok",
+          "parent": "node.planner",
+          "attrs": {
+            "mock": false
+          }
+        },
+        {
+          "name": "node.planner",
+          "duration_ms": 3131.57,
+          "status": "ok",
+          "attrs": {
+            "kind": "llm"
+          }
+        },
+        {
+          "name": "node.resource",
+          "duration_ms": 147.59,
+          "status": "ok",
+          "attrs": {
+            "kind": "llm"
+          }
+        },
+        {
+          "name": "llm.Quiz",
+          "duration_ms": 1746.153,
+          "status": "ok",
+          "parent": "node.quiz",
+          "attrs": {
+            "mock": false
+          }
+        },
+        {
+          "name": "node.quiz",
+          "duration_ms": 1748.777,
+          "status": "ok",
+          "attrs": {
+            "kind": "llm"
+          }
+        },
+        {
+          "name": "llm.Review",
+          "duration_ms": 3186.777,
+          "status": "ok",
+          "parent": "node.review",
+          "attrs": {
+            "mock": false
+          }
+        },
+        {
+          "name": "node.review",
+          "duration_ms": 3188.279,
+          "status": "ok",
+          "attrs": {
+            "kind": "llm"
+          }
+        },
+        {
+          "name": "llm.chat",
+          "duration_ms": 539.455,
+          "status": "ok",
+          "parent": "node.tutor",
+          "attrs": {
+            "mock": false
+          }
+        },
+        {
+          "name": "tool.count_history_sessions",
+          "duration_ms": 2.118,
+          "status": "ok",
+          "parent": "node.tutor"
+        },
+        {
+          "name": "tool.get_student_profile",
+          "duration_ms": 1.811,
+          "status": "ok",
+          "parent": "node.tutor"
+        },
+        {
+          "name": "llm.chat",
+          "duration_ms": 1346.667,
+          "status": "ok",
+          "parent": "node.tutor",
+          "attrs": {
+            "mock": false
+          }
+        },
+        {
+          "name": "tool.load_skill",
+          "duration_ms": 2.313,
+          "status": "ok",
+          "parent": "node.tutor"
+        },
+        {
+          "name": "tool.search_learning_resources",
+          "duration_ms": 0.517,
+          "status": "ok",
+          "parent": "node.tutor"
+        },
+        {
+          "name": "tool.search_learning_resources",
+          "duration_ms": 0.371,
+          "status": "ok",
+          "parent": "node.tutor"
+        },
+        {
+          "name": "tool.search_learning_resources",
+          "duration_ms": 0.318,
+          "status": "ok",
+          "parent": "node.tutor"
+        },
+        {
+          "name": "llm.chat",
+          "duration_ms": 1069.697,
+          "status": "ok",
+          "parent": "node.tutor",
+          "attrs": {
+            "mock": false
+          }
+        },
+        {
+          "name": "node.tutor",
+          "duration_ms": 2968.379,
+          "status": "ok",
+          "attrs": {
+            "kind": "agent"
+          }
+        },
+        {
+          "name": "node.save_memory",
+          "duration_ms": 15.538,
+          "status": "ok",
+          "attrs": {
+            "kind": "io"
+          }
+        }
+      ]
+    }
+  },
+  "eval_reports": {
+    "report_20260930_181542.json": {
+      "generated_at": "report_20260930_181542.json",
+      "cases": 6,
+      "passed": 4,
+      "resource_count": 4,
+      "fabricated_links": 0,
+      "anti_hallucination_pct": 100.0,
+      "anti_hallucination_applicable": true,
+      "refusal_rate_pct": 100.0,
+      "per_case": [
+        {
+          "id": "C1_normal_python",
+          "pass": true,
+          "resources": 4,
+          "refused": false,
+          "fails": []
+        },
+        {
+          "id": "C2_name_major_extract",
+          "pass": true,
+          "resources": 0,
+          "refused": true,
+          "fails": []
+        },
+        {
+          "id": "C3_weak_algorithm",
+          "pass": false,
+          "resources": 0,
+          "refused": true,
+          "fails": [
+            "资源数 0 < 期望 1"
+          ]
+        },
+        {
+          "id": "C4_obscure_topic",
+          "pass": true,
+          "resources": 0,
+          "refused": true,
+          "fails": []
+        },
+        {
+          "id": "C5_clear_goal_time",
+          "pass": false,
+          "resources": 0,
+          "refused": true,
+          "fails": [
+            "资源数 0 < 期望 1"
+          ]
+        },
+        {
+          "id": "C6_minimal_input",
+          "pass": true,
+          "resources": 0,
+          "refused": true,
+          "fails": []
+        }
+      ]
+    },
+    "report_20260930_182852.json": {
+      "generated_at": "report_20260930_182852.json",
+      "cases": 3,
+      "passed": 3,
+      "resource_count": 0,
+      "fabricated_links": 0,
+      "anti_hallucination_pct": null,
+      "anti_hallucination_applicable": false,
+      "refusal_rate_pct": 100.0,
+      "per_case": [
+        {
+          "id": "A1_no_match_quantum",
+          "pass": true,
+          "resources": 0,
+          "refused": true,
+          "fails": []
+        },
+        {
+          "id": "A2_no_match_porcelain",
+          "pass": true,
+          "resources": 0,
+          "refused": true,
+          "fails": []
+        },
+        {
+          "id": "A3_no_match_consensus",
+          "pass": true,
+          "resources": 0,
+          "refused": true,
+          "fails": []
+        }
+      ]
+    }
+  },
+  "finding": {
+    "summary": "Mock 模式下常规用例 6/6 全绿；换成真实模型后只有 4/6。",
+    "detail": [
+      "C3_weak_algorithm 与 C5_clear_goal_time 失败：期望至少 1 条资源，真实模型下返回 0 条（被误拒）。",
+      "根因：检索用的 query 来自学习计划的步骤标题。mock 的计划是固定桩，与 12 篇语料天然对得上；真实模型生成的标题更自由，命中不了语料 → 检索为空 → 触发代码级拒答。",
+      "也就是说：离线桩掩盖了「语料覆盖不足」这个真实问题，而不是证明了它对。",
+      "对抗用例 3/3 全部正确拒答，编造链接 0 条 —— 拒答侧在真实模型下依然成立。"
+    ],
+    "next_action": "扩语料（12 篇 → 上百篇）后重跑；并把「真实模型回归」加进 CI 的可选任务。"
+  },
+  "note": "本文件由真实 API 调用产生，不是 mock。可对照 eval/report_20260930_181542.json 与 report_20260930_182852.json 复核。",
+  "tokenizer_finding": {
+    "headline": "CJK bigram 分词没有落在默认生产路径上 —— 基准里的改进未生效",
+    "default_state": "未配 EMBED_API_KEY → get_embedding_provider() 返回 None",
+    "why_bigram_unreachable": "bigram 只在 _hybrid_retrieve() 内使用，而该函数在语义路不可用时直接返回 None；调用方退回 _legacy_retrieve()，那里用的是 get_retriever() = 空白分词",
+    "labeled_set_hit1": {
+      "A组_直述_n12": {
+        "空白分词": 75.0,
+        "bigram": 100.0
+      },
+      "B组_同义改写_n24": {
+        "空白分词": 0.0,
+        "bigram": 87.5
+      }
+    },
+    "real_model_plan_titles": [
+      {
+        "title": "环境搭建与首次运行",
+        "空白命中": 0,
+        "bigram命中": 0
+      },
+      {
+        "title": "核心语法：变量、类型与运算",
+        "空白命中": 0,
+        "bigram命中": 4
+      },
+      {
+        "title": "流程控制：条件与循环",
+        "空白命中": 0,
+        "bigram命中": 2
+      },
+      {
+        "title": "数据结构：列表、字典与函数",
+        "空白命中": 0,
+        "bigram命中": 4
+      },
+      {
+        "title": "文件读写与错误处理",
+        "空白命中": 0,
+        "bigram命中": 0
+      },
+      {
+        "title": "方向探索与阶段复盘",
+        "空白命中": 0,
+        "bigram命中": 1
+      }
+    ],
+    "impact": "基准测出的 22.2%→77.8% 只在混合路生效；默认路径（无 key）仍是空白分词，中文计划标题几乎全灭。真实模型评测 2 个用例失败与此直接相关。",
+    "proposed_fix": "app/rag.py::_legacy_retrieve 中 get_retriever(k=k) → _get_bigram_retriever(k=k)。bigram 不需要 key、不需要网络，没有理由挂在混合路后面。",
+    "caveat": "会让「未配 Key 时与历史版本逐行为一致」的承诺失效，需同步更新 rag.py 模块 docstring 与 tests/test_hybrid_retrieval.py:29 的断言。"
+  },
+  "after_fix": {
+    "applied_at": "2026-09-30T18:48:56",
+    "what_changed": [
+      "app/rag.py::_legacy_retrieve —— get_retriever()（空白分词）→ _get_bigram_retriever()（CJK bigram）",
+      "app/rag.py::retrieve —— min_score 默认 0.0 → 2.0（实测选出，零召回代价换拒答提升）",
+      "app/rag.py 模块 docstring / _legacy_retrieve docstring —— 说明为什么不再保持空白分词的「历史兼容」",
+      "scripts/bm25_offline_bench.py —— MIN_SCORE_PROD 0.0 → 2.0；分词诊断不再按 hybrid 真假选分词器（标签曾失真）",
+      "tests/test_hybrid_retrieval.py / tests/test_resource_guard.py —— 3 处把「量子计算基础」「量子纠缠…」换成无争议的语料外例子"
+    ],
+    "before_after_real_model": {
+      "常规用例": {
+        "改前": "4/6 (66.7%)",
+        "改后": "5/6 (83.3%)"
+      },
+      "对抗用例": {
+        "改前": "3/3 (100%)",
+        "改后": "3/3 (100%)"
+      },
+      "推荐资源总数": {
+        "改前": 4,
+        "改后": 13
+      },
+      "编造链接": {
+        "改前": 0,
+        "改后": 0
+      },
+      "逐条变化": [
+        "C2_name_major_extract  资源 0 → 2",
+        "C4_obscure_topic       资源 0 → 2（量子计算现在能召回真实资料）",
+        "C5_clear_goal_time     资源 0 → 2  （FAIL → PASS）",
+        "C6_minimal_input       资源 0 → 3",
+        "C3_weak_algorithm      仍为 0（算法主题的计划标题与语料无 bigram 重叠 —— 属语料覆盖问题，非缺陷）"
+      ]
+    },
+    "offline_bench_after": {
+      "生效路径": "纯词法（bigram BM25 + score > min_score）",
+      "A组_直述_Hit@1": 100.0,
+      "B组_同义改写_Hit@1": 66.7,
+      "合计_Hit@1": 77.8,
+      "C组正确拒答": 95.5,
+      "改前合计_Hit@1": 22.2,
+      "改前C组正确拒答": "100%（假象：空白分词拒绝一切中文，A/B 组只有 22.2%）"
+    },
+    "tests": "158 passed",
+    "honest_caveats": [
+      "C 组正确拒答 100% → 95.5%：放行了「量子纠缠的拓扑保护与容错」1 条。",
+      "争议样本拒答 100% → 50%：放行了「量子计算基础」（命中「计算机网络：HTTP/TCP 核心概念」）。",
+      "这是 bigram 的固有代价：短查询与相邻主题共享二元组时会产生假阳性。标注集本就把它列为「产品语义可争议」，未并入 C 组主口径。",
+      "但换来的收益是决定性的：改前「空白分词」让**所有中文问法**都被拒答 —— C 组 100% 拒答只是这个故障的另一面。"
+    ],
+    "rollback": "备份在 app/rag.py.bak-20260930 与 tests/test_hybrid_retrieval.py.bak-20260930。"
+  },
+  "conclusion": "这次真实运行的收获不是「跑通了」，而是「跑出一个离线基准看不见的问题」：基准里 22.2%→77.8% 的改进只挂在混合路（需要 embedding key）后面，默认生产路径仍是空白分词，中文检索整体失效。真实模型评测 4/6 就是这个问题的症状。修补后默认路径达到 77.8%（离线）/ 5/6（真实模型），且不依赖任何 API key。"
+}
