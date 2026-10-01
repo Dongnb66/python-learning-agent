@@ -1,24 +1,24 @@
 {
   "fingerprint": {
-    "generated_at": "2026-09-23T13:06:52",
-    "python": "3.12.14",
+    "generated_at": "2026-10-01T10:09:36",
+    "python": "3.14.6",
     "python_impl": "CPython",
     "platform": "Windows-11-10.0.22631-SP0",
     "machine": "AMD64",
-    "git_commit": "3dcc262f2b0f44fc029a7e754ef2eb1c4ab18d2c",
+    "git_commit": "f465541b2907a2d04dc37b20e39255ad9aefce01",
     "git_branch": "main",
-    "git_dirty_files": 7,
+    "git_dirty_files": 4,
     "packages": {
       "fastapi": "0.141.1",
       "starlette": "1.6.0",
       "pydantic": "2.13.5",
-      "langchain": "1.4.2",
-      "langchain-core": "1.6.4",
-      "langgraph": "1.2.12",
-      "langchain-openai": "1.6.3",
+      "langchain": "1.4.0",
+      "langchain-core": "1.6.2",
+      "langgraph": "1.2.11",
+      "langchain-openai": "1.6.1",
       "langchain-community": "0.4.2",
       "rank-bm25": "0.2.2",
-      "sqlalchemy": "2.0.54",
+      "sqlalchemy": "2.0.52",
       "httpx": "0.28.1",
       "pytest": "9.1.1"
     }
@@ -27,10 +27,10 @@
   "tests": {
     "ok": true,
     "exit_code": 0,
-    "passed": 156,
+    "passed": 163,
     "failed": 0,
     "errors": 0,
-    "tail": "156 passed, 4 warnings in 4.88s"
+    "tail": "163 passed, 4 warnings in 4.94s"
   },
   "eval_normal": {
     "cases": 6,
@@ -39,23 +39,24 @@
     "resource_count": 24,
     "fabricated_links": 0,
     "anti_hallucination_pct": 100.0,
+    "anti_hallucination_applicable": true,
     "refusal_eligible_cases": 2,
     "refused_cases": 0,
     "refusal_rate_pct": 0.0,
-    "avg_duration_ms": 26.2,
-    "max_duration_ms": 76.357,
+    "avg_duration_ms": 24.0,
+    "max_duration_ms": 68.678,
     "slowest_nodes_first_case": [
       {
         "name": "node.resource",
-        "duration_ms": 45.565
+        "duration_ms": 40.499
       },
       {
         "name": "node.save_memory",
-        "duration_ms": 15.54
+        "duration_ms": 13.73
       },
       {
-        "name": "node.tutor",
-        "duration_ms": 5.354
+        "name": "node.load_memory",
+        "duration_ms": 5.584
       }
     ]
   },
@@ -65,24 +66,25 @@
     "completeness_pct": 100.0,
     "resource_count": 0,
     "fabricated_links": 0,
-    "anti_hallucination_pct": 100.0,
+    "anti_hallucination_pct": null,
+    "anti_hallucination_applicable": false,
     "refusal_eligible_cases": 3,
     "refused_cases": 3,
     "refusal_rate_pct": 100.0,
-    "avg_duration_ms": 15.5,
-    "max_duration_ms": 16.943,
+    "avg_duration_ms": 14.8,
+    "max_duration_ms": 16.165,
     "slowest_nodes_first_case": [
       {
         "name": "node.save_memory",
-        "duration_ms": 10.286
+        "duration_ms": 9.8
       },
       {
         "name": "node.tutor",
-        "duration_ms": 1.954
+        "duration_ms": 1.881
       },
       {
         "name": "node.load_memory",
-        "duration_ms": 1.903
+        "duration_ms": 1.708
       }
     ]
   },
@@ -109,6 +111,26 @@
       {
         "group": "④ 关掉 URL 白名单",
         "fabricated": 1,
+        "refused": true
+      },
+      {
+        "group": "① 全约束（现状）",
+        "fabricated": 0,
+        "refused": true
+      },
+      {
+        "group": "② 关掉相关性阈值",
+        "fabricated": 0,
+        "refused": true
+      },
+      {
+        "group": "③ 关掉代码级拒答",
+        "fabricated": 0,
+        "refused": true
+      },
+      {
+        "group": "④ 关掉 URL 白名单",
+        "fabricated": 2,
         "refused": true
       }
     ]

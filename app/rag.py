@@ -26,7 +26,12 @@ Hit@1 = 0%、**所有中文问法都被「空命中拒答」挡掉** —— 也�
 bigram 是纯本地算法，**不需要 Key、不需要网络**，没有任何理由把它挂在语义路后面。
 
 实测（`scripts/bm25_offline_bench.py` 口径，`min_score=2.0`）：
-合计 Hit@1 **22.2% → 77.8%**，C 组正确拒答 95.5%。
+合计 Hit@1 **19.4% → 77.8%**，C 组正确拒答 95.5%。
+
+⚠️ **19.4% 与仓库里另一个 22.2% 的区别**：22.2% 是 `min_score=0.0`（阈值调优前）
+的旧口径，出现在 `eval/bm25_bench_20260923_023656.json` 与 `eval/real_run_20260930.json` 里。
+**两个数不能相减** —— 比较的两个数必须来自同一份配置。
+同口径复现：`python scripts/tokenizer_significance.py`（McNemar p=9.5e-07）。
 
 未配置 Embedding Key 时，`retrieve()` 走这条词法路；语义路是可选增强，不是运行前提。
 """
