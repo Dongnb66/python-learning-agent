@@ -108,7 +108,8 @@ def test_profile_chat_empty_messages_rejected(client):
     assert resp.json()["success"] is False
 
 
-def test_profile_generate_shape(client):
+def _generate_profile(client):
+    """生成一份画像并返回其 id（供本文件多个用例复用；它不是测试函数，所以可以返回值）。"""
     with _mock_all_llms():
         resp = client.post("/api/profile/generate", json={"dialogueHistory": DIALOGUE})
     assert resp.status_code == 200
@@ -125,6 +126,12 @@ def test_profile_generate_shape(client):
         "studyTime",
     }
     assert data["agentResult"]["agent"] == "ProfileAgent"
+    return profile["id"]
+
+
+def test_profile_generate_shape(client):
+    """画像结构断言由 _generate_profile 覆盖；本用例保证它可跑通且 id 可用。"""
+    assert _generate_profile(client)
 
 
 def test_profile_get_and_list(client):
