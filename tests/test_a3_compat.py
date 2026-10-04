@@ -125,7 +125,6 @@ def test_profile_generate_shape(client):
         "studyTime",
     }
     assert data["agentResult"]["agent"] == "ProfileAgent"
-    return profile["id"]
 
 
 def test_profile_get_and_list(client):
@@ -194,7 +193,6 @@ def test_generate_produces_a3_package(client):
     assert any(r["id"] == resource["id"] for r in resp.json()["data"]["resources"])
     resp = client.get(f"/api/resource/{resource['id']}")
     assert resp.status_code == 200
-    return resource
 
 
 def test_generate_infers_course_from_major(client):
