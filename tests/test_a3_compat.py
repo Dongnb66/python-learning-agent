@@ -135,7 +135,7 @@ def test_profile_generate_shape(client):
 
 
 def test_profile_get_and_list(client):
-    pid = test_profile_generate_shape(client)
+    pid = _generate_profile(client)
 
     resp = client.get(f"/api/profile/{pid}")
     assert resp.status_code == 200
