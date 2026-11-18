@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="icon" href="data:,">
+<title>学习闭环 Agent · StudyHack 参赛演示</title>
+<style>
+ :root{--ink:#1e293b;--sub:#64748b;--line:#e2e8f0;--bg:#f4f6fb;--card:#fff;--pri:#4f46e5;--pri-soft:#eef2ff;--ok:#16a34a;--ok-soft:#f0fdf4;--warn:#b45309;--warn-soft:#fffbeb;--bad:#dc2626;--bad-soft:#fef2f2}
+ *{box-sizing:border-box}
+ body{margin:0;font-family:system-ui,"Segoe UI","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--ink);line-height:1.6}
+ .wrap{max-width:960px;margin:0 auto;padding:24px 16px 80px}
+ header.hero{padding:28px 0 8px}
+ .badge{display:inline-block;background:var(--pri-soft);color:var(--pri);border:1px solid #c7d2fe;border-radius:999px;padding:2px 12px;font-size:12px;margin:0 6px 6px 0}
+ h1{font-size:26px;margin:8px 0 4px}
+ .sub{color:var(--sub);font-size:14px;margin:0}
+ .tip{background:var(--pri-soft);border:1px solid #c7d2fe;border-radius:10px;padding:12px 14px;font-size:13px;margin:16px 0}
+ .graph{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:14px 0;font-size:12px}
+ .gnode{background:#fff;border:1px solid var(--line);border-radius:8px;padding:3px 10px}
+ .gnode.agent{border-color:#c7d2fe;background:var(--pri-soft);color:var(--pri);font-weight:600}
+ .garrow{color:var(--sub)}
+ .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px;margin:16px 0}
+ .card h2{font-size:17px;margin:0 0 4px;display:flex;align-items:center;gap:8px}
+ .stepno{display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:50%;background:var(--pri);color:#fff;font-size:13px;flex:0 0 auto}
+ .desc{color:var(--sub);font-size:13px;margin:0 0 12px}
+ label{display:block;font-size:13px;margin:10px 0 4px;color:var(--ink)}
+ input,textarea,select{width:100%;border:1px solid #cbd5e1;border-radius:8px;padding:8px 10px;font-size:13px;font-family:inherit;background:#fff}
+ textarea{min-height:64px;resize:vertical}
+ .row{display:flex;gap:12px;flex-wrap:wrap}.row>div{flex:1;min-width:160px}
+ button{background:var(--pri);color:#fff;border:0;border-radius:8px;padding:8px 16px;font-size:13px;cursor:pointer;margin:12px 8px 0 0}
+ button:hover{filter:brightness(1.08)}
+ button.ghost{background:#fff;color:var(--pri);border:1px solid #c7d2fe}
+ button:disabled{opacity:.5;cursor:not-allowed}
+ .small{font-size:12px;color:var(--sub)}
+ .err{color:var(--bad);font-size:13px}
+ .pill{display:inline-block;border-radius:999px;padding:1px 10px;font-size:12px;margin:2px 4px 2px 0;border:1px solid}
+ .pill.ok{background:var(--ok-soft);border-color:#bbf7d0;color:var(--ok)}
+ .pill.warn{background:var(--warn-soft);border-color:#fde68a;color:var(--warn)}
+ .pill.bad{background:var(--bad-soft);border-color:#fecaca;color:var(--bad)}
+ .pill.info{background:var(--pri-soft);border-color:#c7d2fe;color:var(--pri)}
+ .dims{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:10px;margin-top:12px}
+ .dim{border:1px solid var(--line);border-radius:10px;padding:10px 12px;font-size:13px;background:#fafbff}
+ .dim b{display:block;font-size:13px}
+ table{border-collapse:collapse;width:100%;font-size:12px;margin-top:10px}
+ td,th{border:1px solid var(--line);padding:5px 8px;text-align:left;vertical-align:top}
+ th{background:#f8fafc}
+ .bar{height:8px;border-radius:4px;background:#e2e8f0;overflow:hidden;min-width:80px}
+ .bar i{display:block;height:100%;background:var(--pri)}
+ .bar i.pass{background:var(--ok)}
+ .refuse{background:var(--bad-soft);border:1px solid #fecaca;border-radius:10px;padding:12px 14px;font-size:13px;margin-top:12px}
+ .answer{background:var(--ok-soft);border:1px solid #bbf7d0;border-radius:10px;padding:12px 14px;font-size:13px;margin-top:12px;white-space:pre-wrap}
+ .hit{border-top:1px dashed var(--line);padding:8px 0;font-size:13px}
+ .hit a{color:var(--pri);word-break:break-all}
+ .q{border:1px solid var(--line);border-radius:10px;padding:12px;margin:10px 0;font-size:13px}
+ .q label{display:flex;gap:8px;align-items:center;margin:6px 0;font-size:13px}
+ .q input[type=radio]{width:auto}
+ .chips{margin:8px 0}
+ .chip{display:inline-block;background:#fff;border:1px solid #c7d2fe;color:var(--pri);border-radius:999px;padding:3px 12px;font-size:12px;cursor:pointer;margin:0 6px 6px 0}
+ .chip:hover{background:var(--pri-soft)}
+ .kv{font-size:13px;margin:4px 0}
+ .trace td{font-family:ui-monospace,Consolas,monospace;font-size:11px}
+ .cmp{background:var(--warn-soft);border:1px solid #fde68a;border-radius:10px;padding:12px 14px;font-size:13px;margin-top:12px}
+ footer{margin-top:28px;font-size:12px;color:var(--sub)}
+ .statusline{font-size:12px;color:var(--sub);margin-top:8px}
+ .check{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--sub);margin-top:10px}
+ .check input{width:auto}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header class="hero">
+  <span class="badge">2026 Qoder 高校创造力大赛 · StudyHack 学习科研赛道</span>
+  <span class="badge">主参赛作品 · 公网演示版</span>
+  <h1>学习闭环 Agent</h1>
+  <p class="sub">我把「画像 → 规划 → 检索问答 → 测验 → 复盘 → 自主辅导」串成一条可审计的学习闭环。防幻觉不是叮嘱模型，而是代码层的三道硬约束——这一页让你亲眼看到它们工作。</p>
+  <div class="graph" aria-label="本地完整版 LangGraph 状态图">
+    <span class="gnode">load_memory</span><span class="garrow">→</span>
+    <span class="gnode">profile</span><span class="garrow">→</span>
+    <span class="gnode">planner</span><span class="garrow">→</span>
+    <span class="gnode">resource</span><span class="garrow">→</span>
+    <span class="gnode">quiz</span><span class="garrow">→</span>
+    <span class="gnode">review</span><span class="garrow">→ 条件边 →</span>
+    <span class="gnode agent">tutor（ReAct ≤4轮）</span><span class="garrow">→</span>
+    <span class="gnode">save_memory</span>
+  </div>
+</header>
+
+<div class="tip"><b>公网版说明：</b>这是无状态演示——学情只存在你浏览器的 localStorage 里，随请求传入、服务端不落库；检索/阈值/拒答/白名单/规划/题库/辅导规则与本地完整版<b>同源同参数</b>（BM25 bigram 分词、阈值 2.0、top-k 4、ReAct 4 轮上限）。完整的 LangGraph 8 节点编排、SQLite 跨会话记忆与真实 LLM 调用在本地完整版；本页无模型 Key，全部走规则兜底，绝不编造。</div>
+<div class="statusline" id="mem-state"></div>
+<button class="ghost" onclick="resetLocal()">清空我的本地学情</button>
+
+<div class="card">
+  <h2><span class="stepno">1</span>学习画像</h2>
+  <p class="desc">告诉我你是谁、想学什么。姓名/专业由与后端同源的正则从你的自我介绍里提取（高置信覆盖），六维画像由表单规则生成。</p>
+  <label>自我介绍（试试「我叫李华，我是软件工程专业」）</label>
+  <textarea id="f-intro" placeholder="我叫……，……专业，平时喜欢……"></textarea>
+  <div class="row">
+    <div><label>知识基础</label><select id="f-base"><option value="beginner">零基础</option><option value="intermediate" selected>能写简单脚本</option><option value="advanced">能做中小项目</option></select></div>
+    <div><label>认知风格</label><select id="f-style"><option>逻辑型</option><option>视觉型</option><option>动手型</option></select></div>
+    <div><label>资源偏好</label><select id="f-pref"><option>图文</option><option>视频</option><option>项目驱动</option></select></div>
+    <div><label>每周学习时间（小时）</label><input id="f-hours" type="number" min="0" max="80" value="10"></div>
+  </div>
+  <label>学习目标</label>
+  <input id="f-goal" placeholder="例如：独立交付一个 AI Agent 项目">
+  <label>薄弱点（用顿号分隔）</label>
+  <input id="f-weak" placeholder="例如：算法与数据结构、工程化部署">
+  <button onclick="doProfile()">生成画像</button>
+  <span class="small" id="profile-msg"></span>
+  <div id="profile-out"></div>
+</div>
+
+<div class="card">
+  <h2><span class="stepno">2</span>学习规划 + 资源推荐（防幻觉三道闸）</h2>
+  <p class="desc">规则版规划与本地零 Key 样例同源；资源推荐走真实链路：按步骤标题 BM25 检索（阈值 2.0）→ 空检索代码级拒答 → URL 白名单逐条过滤。</p>
+  <button onclick="doPlan()" id="btn-plan">生成学习计划</button>
+  <button class="ghost" onclick="doResources()" id="btn-res" disabled>按计划推荐资源</button>
+  <label class="check"><input type="checkbox" id="inject-fake"> 注入一条编造链接，看白名单当场拦下它</label>
+  <div id="plan-out"></div>
+  <div id="res-out"></div>
+</div>
+
+<div class="card">
+  <h2><span class="stepno">3</span>知识库检索问答（防幻觉可见化）</h2>
+  <p class="desc">我把 12 条课程知识库全量打分给你看：只有 BM25 分 &gt; 2.0 的才进候选；一条都没有时我在代码层直接拒答，根本不调用模型。</p>
+  <div class="chips">
+    <span class="chip" onclick="askSample('学习 LangGraph')">学习 LangGraph</span>
+    <span class="chip" onclick="askSample('怎么用 Docker 部署 Python 应用')">怎么用 Docker 部署 Python 应用</span>
+    <span class="chip" onclick="askSample('RAG 防幻觉')">RAG 防幻觉</span>
+    <span class="chip" onclick="askSample('摩托车发动机化油器怎么清洗')">语料外话题（看拒答）</span>
+    <span class="chip" onclick="askSample('我想学点编程')">零命中话题（看拒答）</span>
+  </div>
+  <div class="row">
+    <div style="flex:3"><input id="ask-q" placeholder="输入问题，例如：FastAPI 怎么做请求校验"></div>
+    <div style="flex:0"><button onclick="doAsk()">检索问答</button></div>
+  </div>
+  <div id="ask-out"></div>
+</div>
+
+<div class="card">
+  <h2><span class="stepno">4</span>自测测验</h2>
+  <p class="desc">种子题库与本地零 Key 样例逐字同源，覆盖本轮计划的三个核心知识点。</p>
+  <div id="quiz-out"></div>
+  <button onclick="doGrade()" id="btn-grade" disabled>交卷批改</button>
+  <div id="grade-out"></div>
+</div>
+
+<div class="card">
+  <h2><span class="stepno">5</span>学情复盘（上次 vs 本次）</h2>
+  <p class="desc">复盘规则结合画像与测验结果；如果你上次来过（localStorage 里有学情快照），我会给出纵向对比——没有历史就明说首次，不编造「上次」。</p>
+  <button onclick="doReview()" id="btn-review" disabled>生成复盘</button>
+  <div id="review-out"></div>
+</div>
+
+<div class="card">
+  <h2><span class="stepno">6</span>自主辅导节点（ReAct 演示）</h2>
+  <p class="desc">这是本地完整版里唯一的自主决策节点：决策 → 调工具 → 观察 → 再决策，最多 4 轮，每轮记入 trace 可审计。公网无 Key 走与后端同构的规则策略（工具真实执行 BM25 检索）；配置了可用 Key 才走模型驱动。</p>
+  <button onclick="doTutor()" id="btn-tutor" disabled>运行 ReAct 辅导</button>
+  <div id="tutor-out"></div>
+</div>
+
+<footer>
+  学习闭环 Agent · python-learning-agent 公网演示版 · FastAPI + LangGraph 多智能体系统的同源规则子集 ·
+  检索参数与拒答判据与后端 156 项离线测试同口径 · 本页不收集任何个人信息，学情仅存于你的浏览器。
+</footer>
+</div>
+
+<script>
+const API='/functions/v1/app/';
+const el=id=>document.getElementById(id);
+const esc=s=>String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+const load=(k,d)=>{try{return JSON.parse(localStorage.getItem(k))??d}catch{return d}};
+const save=(k,v)=>localStorage.setItem(k,JSON.stringify(v));
+
+let profile=load('la_profile',null);
+let prevSnapshot=load('la_snapshot',null);
+let historyCount=load('la_history',0);
+let plan=null,quiz=null,quizResult=null,review=null;
+
+function memState(){
+ el('mem-state').textContent=prevSnapshot
+  ?`本地学情：已有 ${historyCount} 次历史会话，上次掌握度「${prevSnapshot.mastery}」（${prevSnapshot.created_at}）。本次复盘将做纵向对比。`
+  :'本地学情：首次学习（localStorage 无历史快照）。完成一轮复盘后我会记住你的学情。';
+}
+function resetLocal(){
+ localStorage.removeItem('la_profile');localStorage.removeItem('la_snapshot');localStorage.removeItem('la_history');
+ profile=null;prevSnapshot=null;historyCount=0;quizResult=null;review=null;
+ el('profile-out').innerHTML='';el('review-out').innerHTML='';el('tutor-out').innerHTML='';el('grade-out').innerHTML='';
+ el('btn-review').disabled=true;el('btn-tutor').disabled=true;
+ memState();
+}
+async function post(t,b){const r=await fetch(API+t,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b||{})});const j=await r.json();if(!j.ok)throw new Error(j.error||'请求失败');return j}
+async function get(t){const r=await fetch(API+t);const j=await r.json();if(!j.ok)throw new Error(j.error||'请求失败');return j}
+function showErr(box,e){box.innerHTML='<span class="err">'+esc(e.message)+'</span>'}
+
+/* ---- 1 画像 ---- */
+function renderProfile(p){
+ const dims=[['知识基础',p.knowledgeBase],['学习目标',p.learningGoal],['认知风格',p.cognitiveStyle],['薄弱点',p.weakPoints],['资源偏好',p.resourcePreference],['学习时间',p.studyTime]];
+ el('profile-out').innerHTML=
+  `<div class="kv"><b>${esc(p.summary)}</b>${p.name?` <span class="pill info">姓名：${esc(p.name)}</span>`:''}${p.major?` <span class="pill info">专业：${esc(p.major)}</span>`:''}</div>
+   <div class="dims">${dims.map(([n,d])=>`<div class="dim"><b>${n} <span class="pill info">${esc(d.level)}</span></b>${esc(d.details)}</div>`).join('')}</div>`;
+}
+async function doProfile(){
+ const box=el('profile-out');
+ try{
+  const j=await post('profile',{intro:el('f-intro').value,goal:el('f-goal').value,weakPoints:el('f-weak').value,knowledgeBase:el('f-base').value,style:el('f-style').value,preference:el('f-pref').value,hours:Number(el('f-hours').value)||0});
+  profile=j.profile;save('la_profile',profile);renderProfile(profile);
+  el('profile-msg').textContent='画像已生成并存入你的浏览器。';
+ }catch(e){showErr(box,e)}
+}
+
+/* ---- 2 规划 + 资源 ---- */
+async function doPlan(){
+ const box=el('plan-out');
+ try{
+  const j=await post('plan',{profile});plan=j.plan;
+  box.innerHTML=`<div class="kv"><b>总目标：${esc(plan.goal)}</b> <span class="pill info">预计 ${plan.total_minutes} 分钟</span><span class="pill ok">${esc(j.source)}</span></div>
+   <table><tr><th>#</th><th>步骤</th><th>做什么</th><th>预计耗时</th></tr>
+   ${plan.steps.map(s=>`<tr><td>${s.step}</td><td>${esc(s.title)}</td><td>${esc(s.description)}</td><td>${s.est_minutes} 分钟</td></tr>`).join('')}</table>`;
+  el('btn-res').disabled=false;
+ }catch(e){showErr(box,e)}
+}
+async function doResources(){
+ const box=el('res-out');
+ try{
+  const body={steps:plan.steps.map(s=>s.title)};
+  if(el('inject-fake').checked)body.candidateItems=[{title:'史上最强三天速成课',url:'https://definitely-not-in-corpus.example.com/awesome-course',type:'video',description:'我故意编造的条目'}];
+  const j=await post('resources',body);
+  if(j.refused){box.innerHTML=`<div class="refuse"><b>代码级拒答：</b>${esc(j.reason)}<br><span class="pill bad">modelCalled: false</span></div>`;return}
+  box.innerHTML=`<div class="kv"><span class="pill ok">白名单候选 ${j.whitelist.length} 条</span>
+   ${j.blocked?`<span class="pill bad">拦下编造条目 ${j.blocked} 条</span>`:'<span class="pill ok">无编造条目</span>'}
+   <span class="pill info">modelCalled: ${j.modelCalled}</span></div>
+   ${j.reason?`<div class="refuse">${esc(j.reason)}</div>`:''}
+   ${j.resources.map(r=>`<div class="hit"><b>[${esc(r.type)}] ${esc(r.title)}</b><br><a href="${esc(r.url)}" target="_blank" rel="noopener">${esc(r.url)}</a><div class="small">${esc(r.description||'')} ${esc(r.relevance||'')}</div></div>`).join('')}
+   <div class="small">本轮白名单（URL 精确匹配 + 标题归一化）：${j.whitelist.map(w=>esc(w.title)).join('、')}</div>`;
+ }catch(e){showErr(box,e)}
+}
+
+/* ---- 3 检索问答 ---- */
+function askSample(q){el('ask-q').value=q;doAsk()}
+async function doAsk(){
+ const box=el('ask-out');const q=el('ask-q').value.trim();
+ if(!q){box.innerHTML='<span class="err">先输入一个问题</span>';return}
+ box.innerHTML='<span class="small">检索中…</span>';
+ try{
+  const j=await post('ask',{query:q});
+  const max=Math.max(...j.scores.map(s=>s.score),0.0001);
+  const table=`<table><tr><th>资料（全量 ${j.scores.length} 条打分）</th><th>BM25 分</th><th></th><th>阈值 ${j.threshold} 判定</th></tr>
+   ${j.scores.map(s=>{const pass=s.score>j.threshold;return `<tr><td>${esc(s.title)}</td><td>${s.score.toFixed(4)}</td><td><div class="bar"><i class="${pass?'pass':''}" style="width:${Math.max(2,Math.round(s.score/max*100))}%"></i></div></td><td>${pass?'<span class="pill ok">进入候选</span>':'<span class="pill bad">过滤</span>'}</td></tr>`}).join('')}</table>`;
+  if(j.refused){
+   box.innerHTML=`<div class="refuse"><b>我拒答了：</b>${esc(j.reason)}<br><span class="pill bad">refused: true</span><span class="pill bad">modelCalled: false</span><div style="margin-top:6px">${esc(j.answer)}</div></div>${table}`;
+  }else{
+   box.innerHTML=`<div class="kv"><span class="pill ok">命中 ${j.hits.length} 条（top-k=${j.k}，分数 &gt; ${j.threshold}）</span><span class="pill info">mode: ${esc(j.mode)}</span><span class="pill info">modelCalled: ${j.modelCalled}</span></div>
+    <div class="answer">${esc(j.answer)}</div>
+    ${j.hits.map(h=>`<div class="hit"><b>${esc(h.title)}</b> <span class="pill ok">score ${h.score.toFixed(4)}</span><br><a href="${esc(h.url)}" target="_blank" rel="noopener">${esc(h.url)}</a></div>`).join('')}${table}`;
+  }
+ }catch(e){showErr(box,e)}
+}
+
+/* ---- 4 测验 ---- */
+const QUIZ_TOPICS=['LangGraph 状态图编排','RAG 防幻觉机制','FastAPI 请求校验'];
+function renderQuiz(){
+ el('quiz-out').innerHTML=quiz.questions.map((q,i)=>`<div class="q"><b>${i+1}. ${esc(q.q)}</b>
+  ${q.options.map(o=>`<label><input type="radio" name="q${i}" value="${esc(o)}"> ${esc(o)}</label>`).join('')}</div>`).join('');
+ el('btn-grade').disabled=false;
+}
+async function doGrade(){
+ const box=el('grade-out');
+ const answers=quiz.questions.map((_,i)=>{const c=document.querySelector(`input[name="q${i}"]:checked`);return c?c.value:''});
+ if(answers.some(a=>!a)){box.innerHTML='<span class="err">还有题没作答</span>';return}
+ try{
+  const j=await post('grade',{answers});
+  const wrongTopics=j.results.map((r,i)=>r.correct?null:QUIZ_TOPICS[i]).filter(Boolean);
+  quizResult={score:j.score,total:j.total,wrongTopics};
+  box.innerHTML=`<div class="kv"><b>得分：${j.score}/${j.total}</b> ${j.score===j.total?'<span class="pill ok">全对</span>':'<span class="pill warn">有错题，复盘会盯着它们</span>'}</div>
+   ${j.results.map((r,i)=>`<div class="q">${r.correct?'<span class="pill ok">答对</span>':'<span class="pill bad">答错</span>'} <b>${i+1}. ${esc(r.q)}</b><div class="small">你的答案：${esc(r.given)}；正确答案：${esc(r.answer)}。${esc(r.explanation)}</div></div>`).join('')}`;
+  el('btn-review').disabled=false;
+ }catch(e){showErr(box,e)}
+}
+
+/* ---- 5 复盘 ---- */
+async function doReview(){
+ const box=el('review-out');
+ try{
+  const j=await post('review',{profile,quizResult,memory:prevSnapshot});
+  review=j.review;
+  box.innerHTML=`<div class="kv"><b>掌握度：${esc(review.mastery)}</b></div>
+   <div class="kv">亮点：${review.strengths.map(s=>`<span class="pill ok">${esc(s)}</span>`).join('')}</div>
+   <div class="kv">薄弱项：${review.gaps.map(s=>`<span class="pill warn">${esc(s)}</span>`).join('')}</div>
+   <div class="kv">下一步：${review.suggestions.map(s=>`<span class="pill info">${esc(s)}</span>`).join('')}</div>
+   ${review.comparison?`<div class="cmp"><b>上次 vs 本次：</b>${esc(review.comparison)}</div>`:'<div class="small">首次学习，无历史学情——comparison 为空，我不编造「上次」。</div>'}`;
+  // 记忆写入浏览器（公网版无状态：服务端不落库）；prevSnapshot 滚动为「上一轮」，供下次对比
+  save('la_snapshot',j.snapshot);historyCount+=1;save('la_history',historyCount);
+  prevSnapshot=j.snapshot;
+  el('btn-tutor').disabled=false;memState();
+ }catch(e){showErr(box,e)}
+}
+
+/* ---- 6 ReAct 辅导 ---- */
+async function doTutor(){
+ const box=el('tutor-out');
+ box.innerHTML='<span class="small">自主循环运行中…</span>';
+ try{
+  const j=await post('tutor',{gaps:review?review.gaps:[],weakPoint:profile?profile.weakPoints.details:'',mastery:review?review.mastery:'',profile,memory:prevSnapshot,historyCount:Math.max(0,historyCount-1)});
+  box.innerHTML=`<div class="kv"><span class="pill info">mode: ${esc(j.mode)}</span><span class="pill ${j.rounds>=j.max_rounds?'warn':'ok'}">轮数 ${j.rounds}/${j.max_rounds}</span><span class="pill info">工具：${j.tools_used.map(esc).join('、')||'无'}</span>${j.degraded?'<span class="pill warn">模型异常已降级规则策略</span>':''}</div>
+   <div class="answer">${esc(j.answer)}</div>
+   <table class="trace"><tr><th>轮次</th><th>工具</th><th>参数</th><th>观察（截断 200 字，可审计）</th></tr>
+   ${j.trace.map(t=>`<tr><td>${t.round}/${j.max_rounds}</td><td>${esc(t.tool)}</td><td>${esc(t.args)}</td><td>${esc(t.observation)}</td></tr>`).join('')}</table>
+   <div class="small">决策轨迹与本地完整版 TutorAgent 同构：新学员不做纵向对比、检索 query 用具体薄弱点、查不到就如实说暂无材料。</div>`;
+ }catch(e){showErr(box,e)}
+}
+
+/* ---- 初始化 ---- */
+(async()=>{
+ memState();
+ if(profile){
+  el('f-intro').value='';el('f-goal').value=profile.learningGoal.details||'';el('f-weak').value=profile.weakPoints.details==='暂未识别出明确薄弱点'?'':profile.weakPoints.details;
+  el('f-base').value=profile.knowledgeBase.level;el('f-hours').value=(profile.studyTime.details.match(/\d+/)||[10])[0];
+  renderProfile(profile);
+ }
+ const j=await get('quiz');quiz=j.quiz;renderQuiz();
+})().catch(e=>{el('quiz-out').innerHTML='<span class="err">'+esc(e.message)+'</span>'});
+</script>
+</body>
+</html>
