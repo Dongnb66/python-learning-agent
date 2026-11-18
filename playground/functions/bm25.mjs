@@ -88,10 +88,11 @@ export class BM25Okapi {
 /**
  * 构建检索器。docs: [{title,url,type,content}]，正文 = `${title}\n${content}`
  * （与 app/rag.py _load_documents 把元数据拼进正文一致）。
+ * params 可选覆盖 {k1,b,epsilon}（Tangle 实验参数）；不传 = 生产参数 1.5/0.75/0.25。
  */
-export function buildRetriever(docs) {
+export function buildRetriever(docs, params = {}) {
   const texts = docs.map((d) => `${d.title || ''}\n${d.content || ''}`);
-  const vectorizer = new BM25Okapi(texts.map(tokenize));
+  const vectorizer = new BM25Okapi(texts.map(tokenize), params.k1 ?? 1.5, params.b ?? 0.75, params.epsilon ?? 0.25);
   return { docs, texts, vectorizer };
 }
 

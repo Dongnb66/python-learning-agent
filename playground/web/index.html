@@ -64,6 +64,7 @@
  details.drawer>.drawer-body{padding:0 18px 18px;border-top:1px dashed var(--line)}
  /* ---- 结果元素 ---- */
  .pill{display:inline-block;border-radius:999px;padding:1px 10px;font-size:12px;margin:2px 4px 2px 0;border:1px solid}
+ [hidden]{display:none!important}
  .pill.ok{background:var(--ok-soft);border-color:#bbf7d0;color:var(--ok)}
  .pill.warn{background:var(--warn-soft);border-color:#fde68a;color:var(--warn)}
  .pill.bad{background:var(--bad-soft);border-color:#fecaca;color:var(--bad)}
@@ -127,6 +128,21 @@
  #mem-strip button{margin:0;padding:4px 12px;font-size:12px}
  details.tip-d{background:var(--pri-soft);border:1px solid #c7d2fe;border-radius:10px;padding:8px 14px;font-size:13px;margin:14px 0}
  details.tip-d summary{cursor:pointer;font-size:12px;color:var(--pri)}
+ /* ---- Tangle 式反应式文档（可拖拽参数，自实现，无外部库） ---- */
+ .tangle{background:#fafbff;border:1px solid #c7d2fe;border-radius:10px;padding:12px 14px;margin:0 0 12px}
+ .tangle-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:13px;margin-bottom:6px}
+ .tangle-head b{color:var(--pri)}
+ .tangle-reset{margin:0;padding:3px 12px;font-size:12px}
+ .tangle-prose{font-size:13.5px;margin:0;line-height:2.1}
+ .tnum{display:inline-block;min-width:2.4em;text-align:center;padding:0 4px;border-radius:6px;border-bottom:2px dashed var(--pri);color:var(--pri);font-weight:700;font-family:ui-monospace,Consolas,monospace;cursor:ew-resize;user-select:none;touch-action:none;background:var(--pri-soft);transition:background .15s}
+ .tnum:hover{background:#e0e7ff}
+ .tnum:focus-visible{outline:2px solid var(--pri);outline-offset:1px}
+ .tnum.dragging{background:var(--pri);color:#fff;border-bottom-style:solid}
+ .tnum.modified{color:var(--warn);border-bottom-color:var(--warn);background:var(--warn-soft)}
+ .tnum.modified.dragging{background:var(--warn);color:#fff}
+ #tangle-verdict{display:block;margin-top:6px;padding:8px 10px;border-radius:8px;background:var(--pri-soft);border:1px dashed #c7d2fe;font-size:13px;line-height:1.7}
+ #tangle-verdict.refused{background:var(--bad-soft);border-color:#fecaca;color:#991b1b}
+ #tangle-verdict.passed{background:var(--ok-soft);border-color:#bbf7d0;color:#166534}
 </style>
 </head>
 <body>
@@ -135,9 +151,9 @@
     <div class="hero-top">
       <div>
         <span class="hbadge">2026 Qoder 高校创造力大赛 · StudyHack 主参赛作品</span>
-        <span class="hbadge">公网演示 v1.1 · 无 Key 规则兜底</span>
+        <span class="hbadge">公网演示 v1.2 · 无 Key 规则兜底</span>
         <h1>学习闭环 Agent<span class="ver">防幻觉不是叮嘱模型，是代码层硬约束——这一页让你亲眼看到、亲手验证</span></h1>
-        <p class="hero-sub">首屏即工具：直接提问，看 BM25 全量打分、阈值过滤、代码级拒答与字符级证据锚点。打开右上「坏模型」开关，把模型换成永远编造的坏模型，约束依然成立。</p>
+        <p class="hero-sub">首屏即工具：直接提问，看 BM25 全量打分、阈值过滤、代码级拒答与字符级证据锚点。论文里的参数数字可以直接拖动（Tangle 式反应式文档），全文结论随拖动联动重算。打开右上「坏模型」开关，把模型换成永远编造的坏模型，约束依然成立。</p>
       </div>
       <label class="switch-wrap" for="bad-model" title="注入一个永远编造的坏模型：阈值 / 拒答 / 白名单 / 引用强制照常执行">
         <span class="switch"><input type="checkbox" id="bad-model" onchange="onBadToggle()"><i></i></span>
@@ -164,8 +180,18 @@
 </div>
 
 <section class="card" id="sec-ask">
-  <h2><span class="stepno">1</span>知识库检索问答 <span class="pill info">防幻觉第①②道闸可见化</span><span class="pill info">证据锚点 [n]</span></h2>
-  <p class="desc">12 条课程知识库全量打分：只有 BM25 分 &gt; 2.0 才进候选；一条都没有时代码层直接拒答、根本不调模型。答案与命中条目带 [n] 编号——点击跳回语料原文，命中片段按字符区间高亮。</p>
+  <h2><span class="stepno">1</span>知识库检索问答 <span class="pill info">防幻觉第①②道闸可见化</span><span class="pill info">证据锚点 [n]</span><span class="pill info">Tangle 可拖拽参数</span></h2>
+  <p class="desc">12 条课程知识库全量打分：只有 BM25 分 &gt; 阈值（生产默认 2.0，可在下方论文里拖动）才进候选；一条都没有时代码层直接拒答、根本不调模型。答案与命中条目带 [n] 编号——点击跳回语料原文，命中片段按字符区间高亮。</p>
+  <div class="tangle" id="tangle-box">
+    <div class="tangle-head">
+      <b>可拖动的论文 · BM25 反应式文档</b>
+      <span class="small">拖动正文里的数字做参数实验，全文结论联动重算</span>
+      <span class="pill warn" id="tangle-exp" hidden>实验参数</span>
+      <button class="ghost tangle-reset" id="tangle-reset" onclick="resetParams()" hidden>复位生产参数</button>
+    </div>
+    <p class="tangle-prose">BM25 用 k1=<span class="tnum" id="tn-k1" data-p="k1" role="slider" tabindex="0" aria-label="BM25 参数 k1，词频饱和，范围 0.5 到 3" aria-valuemin="0.5" aria-valuemax="3">1.5</span> 控制词频饱和（越大，高频词贡献越多），b=<span class="tnum" id="tn-b" data-p="b" role="slider" tabindex="0" aria-label="BM25 参数 b，文档长度归一化，范围 0 到 1" aria-valuemin="0" aria-valuemax="1">0.75</span> 控制文档长度归一化（0 不惩罚长文，1 完全归一），ε=<span class="tnum" id="tn-eps" data-p="eps" role="slider" tabindex="0" aria-label="BM25 参数 epsilon，负 IDF 地板，范围 0 到 1" aria-valuemin="0" aria-valuemax="1">0.25</span> 给负 IDF 词一个地板值；检索只放行分数严格大于阈值 <span class="tnum" id="tn-threshold" data-p="threshold" role="slider" tabindex="0" aria-label="拒答阈值，范围 0 到 6" aria-valuemin="0" aria-valuemax="6">2.0</span> 的前 top-k=<span class="tnum" id="tn-k" data-p="k" role="slider" tabindex="0" aria-label="top-k 候选条数，范围 1 到 12" aria-valuemin="1" aria-valuemax="12">4</span> 条候选。<span id="tangle-verdict" aria-live="polite"></span></p>
+    <p class="small" style="margin:6px 0 0">左右拖动数字（约 6px 一步），或点选聚焦后按 ←/→ 步进（Shift ×5，Home/End 直达边界）；150ms 防抖后分数表、拒答徽章与上面这句话联动重算。边界：k1∈[0.5,3]、b/ε∈[0,1]、阈值∈[0,6]、k∈[1,12]，越界服务端 400。</p>
+  </div>
   <div class="chips">
     <span class="chip" onclick="askSample('学习 LangGraph')">学习 LangGraph</span>
     <span class="chip" onclick="askSample('怎么用 Docker 部署 Python 应用')">怎么用 Docker 部署 Python 应用</span>
@@ -182,7 +208,7 @@
 
 <details class="tip-d">
   <summary><b>公网版说明</b>（无状态演示 · 与本地完整版同源同参数 · 点击展开）</summary>
-  <p style="margin:8px 0 4px">学情只存在你浏览器的 localStorage 里，随请求传入、服务端不落库；检索/阈值/拒答/白名单/规划/题库/辅导规则与本地完整版<b>同源同参数</b>（BM25 bigram 分词、阈值 2.0、top-k 4、ReAct 4 轮上限）。完整的 LangGraph 8 节点编排、SQLite 跨会话记忆与真实 LLM 调用在本地完整版；本页无模型 Key，全部走规则兜底，绝不编造。「模拟坏模型」开关注入的是一个故意永远编造的演示模型，用来证明约束不依赖模型自觉。</p>
+  <p style="margin:8px 0 4px">学情只存在你浏览器的 localStorage 里，随请求传入、服务端不落库；检索/阈值/拒答/白名单/规划/题库/辅导规则与本地完整版<b>同源同参数</b>（BM25 bigram 分词、阈值 2.0、top-k 4、ReAct 4 轮上限）。v1.2 新增 Tangle 式反应式参数：首屏论文里的 k1/b/ε/阈值/top-k 可拖拽实验（服务端严格边界校验，越界 400），<b>不拖动 = 生产参数，对拍口径不变</b>；偏离生产值时显示「实验参数」徽章，一键复位。完整的 LangGraph 8 节点编排、SQLite 跨会话记忆与真实 LLM 调用在本地完整版；本页无模型 Key，全部走规则兜底，绝不编造。「模拟坏模型」开关注入的是一个故意永远编造的演示模型，用来证明约束不依赖模型自觉——实验参数下同样成立。</p>
 </details>
 
 <details class="card drawer" id="sec-profile">
@@ -216,7 +242,7 @@
 
 <section class="card" id="sec-res">
   <h2><span class="stepno">4</span>资源推荐 <span class="pill info">防幻觉第③道闸：URL 白名单</span></h2>
-  <p class="desc">按步骤标题 BM25 检索（阈值 2.0）→ 空检索代码级拒答 → URL 白名单逐条过滤。放行条目带 [n] 证据编号，点击看语料原文；被拦条目当场示众。</p>
+  <p class="desc">按步骤标题 BM25 检索（默认阈值 2.0，跟随上方论文的实验参数）→ 空检索代码级拒答 → URL 白名单逐条过滤。放行条目带 [n] 证据编号，点击看语料原文；被拦条目当场示众。</p>
   <button onclick="doResources()" id="btn-res" disabled>按计划推荐资源</button>
   <label class="check"><input type="checkbox" id="inject-fake"> 注入一条编造链接，看白名单当场拦下它</label>
   <div class="badnote" id="bad-hint-res" hidden>坏模型开关已打开：本次推荐将由「永远编造」的坏模型出候选，白名单照常逐条审计。</div>
@@ -246,8 +272,8 @@
 </section>
 
 <footer>
-  学习闭环 Agent · python-learning-agent 公网演示版 v1.1 · FastAPI + LangGraph 多智能体系统的同源规则子集 ·
-  检索参数与拒答判据与后端 163 项 pytest + 46 项 node 对拍测试同口径 · 本页不收集任何个人信息，学情仅存于你的浏览器。
+  学习闭环 Agent · python-learning-agent 公网演示版 v1.2 · FastAPI + LangGraph 多智能体系统的同源规则子集 ·
+  检索参数与拒答判据与后端 163 项 pytest + 60 项 node 对拍测试同口径 · 本页不收集任何个人信息，学情仅存于你的浏览器。
 </footer>
 </div>
 
@@ -273,6 +299,73 @@ let historyCount=load('la_history',0);
 let plan=null,quiz=null,quizResult=null,review=null;
 const evStore={ask:[],res:[]};   // 证据锚点数据源：当前回答命中 / 当前放行资源
 
+/* ---- Tangle 式反应式参数：prose 数字可拖拽/键盘步进，150ms 防抖联动全文 ---- */
+const PROD={k1:1.5,b:0.75,eps:0.25,threshold:2.0,k:4};
+const PB={k1:{min:0.5,max:3,step:0.05,dec:2},b:{min:0,max:1,step:0.01,dec:2},eps:{min:0,max:1,step:0.01,dec:2},threshold:{min:0,max:6,step:0.1,dec:1},k:{min:1,max:12,step:1,dec:0}};
+let params={...PROD};
+let lastAsk=null,askSeq=0,recalcTimer=null;
+const isExp=()=>Object.keys(PROD).some(key=>params[key]!==PROD[key]);
+const fmtP=key=>params[key].toFixed(PB[key].dec);
+const expBody=()=>isExp()?{params:{...params}}:{};
+function renderTangle(){
+ for(const key of Object.keys(PROD)){
+  const s=el('tn-'+key);if(!s)continue;
+  s.textContent=fmtP(key);
+  s.setAttribute('aria-valuenow',String(params[key]));
+  s.setAttribute('aria-valuetext',fmtP(key));
+  s.classList.toggle('modified',params[key]!==PROD[key]);
+ }
+ el('tangle-exp').hidden=!isExp();
+ el('tangle-reset').hidden=!isExp();
+ renderVerdict();
+}
+function renderVerdict(){
+ const v=el('tangle-verdict');
+ if(!lastAsk){v.className='';v.textContent='输入问题或点下方示例后，拖动正文里的数字，看这句结论如何随参数实时改写。';return}
+ const max=lastAsk.scores.length?lastAsk.scores[0].score:0;
+ const pass=lastAsk.scores.slice(0,params.k).filter(s=>s.score>params.threshold).length;
+ v.className=pass?'passed':'refused';
+ v.textContent=pass
+  ?`阈值 ${fmtP('threshold')} 时，查询「${lastAsk.query}」被放行：${pass} 条候选分数 > 阈值进入回答（top-k=${params.k}，最高分 ${max.toFixed(4)}）。`
+  :`阈值 ${fmtP('threshold')} 时，查询「${lastAsk.query}」被拒答：全部候选分数 ≤ 阈值（最高 ${max.toFixed(4)}），代码级拒答，模型一次都不会被调用。`;
+}
+function setParam(key,value){
+ const b=PB[key];
+ let v=Math.min(b.max,Math.max(b.min,Math.round(value/b.step)*b.step));
+ v=Number(v.toFixed(b.dec));
+ if(v===params[key])return;
+ params[key]=v;renderTangle();scheduleRecalc();
+}
+function scheduleRecalc(){
+ clearTimeout(recalcTimer);
+ recalcTimer=setTimeout(()=>{doAsk(true);if(plan&&el('res-out').innerHTML.trim())doResources()},150);
+}
+function resetParams(){
+ params={...PROD};renderTangle();
+ doAsk(true);if(plan&&el('res-out').innerHTML.trim())doResources();
+}
+function bindTangle(){
+ for(const s of document.querySelectorAll('.tnum')){
+  const key=s.dataset.p,b=PB[key];
+  let startX=0,startVal=0,dragging=false;
+  s.addEventListener('pointerdown',e=>{e.preventDefault();dragging=true;startX=e.clientX;startVal=params[key];s.classList.add('dragging');s.setPointerCapture(e.pointerId);s.focus()});
+  s.addEventListener('pointermove',e=>{if(!dragging)return;setParam(key,startVal+Math.round((e.clientX-startX)/6)*b.step)});
+  const end=e=>{if(!dragging)return;dragging=false;s.classList.remove('dragging');try{s.releasePointerCapture(e.pointerId)}catch(_){/* 已释放 */}};
+  s.addEventListener('pointerup',end);s.addEventListener('pointercancel',end);
+  s.addEventListener('keydown',e=>{
+   const mult=e.shiftKey?5:1;let v=null;
+   if(e.key==='ArrowRight'||e.key==='ArrowUp')v=params[key]+b.step*mult;
+   else if(e.key==='ArrowLeft'||e.key==='ArrowDown')v=params[key]-b.step*mult;
+   else if(e.key==='PageUp')v=params[key]+b.step*5;
+   else if(e.key==='PageDown')v=params[key]-b.step*5;
+   else if(e.key==='Home')v=b.min;
+   else if(e.key==='End')v=b.max;
+   else return;
+   e.preventDefault();setParam(key,v);
+  });
+ }
+}
+
 function memState(){
  el('mem-state').textContent=prevSnapshot
   ?`本地学情：已有 ${historyCount} 次历史会话，上次掌握度「${prevSnapshot.mastery}」（${prevSnapshot.created_at}）。本次复盘将做纵向对比。`
@@ -292,6 +385,7 @@ const badOn=()=>el('bad-model').checked;
 function onBadToggle(){
  document.body.classList.toggle('bad-on',badOn());
  el('bad-hint-res').hidden=!badOn();
+ if(lastAsk){doAsk(true);if(plan&&el('res-out').innerHTML.trim())doResources()}
 }
 function gotoSec(id){
  const node=el(id);
@@ -361,16 +455,19 @@ function hitsHtml(hits,kind){
 
 /* ---- 1 检索问答 ---- */
 function askSample(q){el('ask-q').value=q;doAsk()}
-async function doAsk(){
+async function doAsk(silent){
  const box=el('ask-out');const q=el('ask-q').value.trim();
  if(!q){box.innerHTML='<span class="err">先输入一个问题</span>';return}
- box.innerHTML='<span class="small">检索中…</span>';
+ const seq=++askSeq;
+ if(!silent)box.innerHTML='<span class="small">检索中…</span>';
  try{
-  const j=await post('ask',{query:q,simulateBadModel:badOn()});
+  const j=await post('ask',{query:q,simulateBadModel:badOn(),...expBody()});
+  if(seq!==askSeq)return; // 拖动防抖期间的过期响应直接丢弃，只渲染最新一次
+  lastAsk=j;renderVerdict();
   evStore.ask=j.hits;
   const table=scoreTable(j);
   if(j.refused){
-   box.innerHTML=`<div class="refuse"><b>我拒答了：</b>${esc(j.reason)}<br><span class="pill bad">refused: true</span><span class="pill bad">modelCalled: false</span>${j.simulateBadModel?'<span class="pill bad">坏模型同样一次都没被调用</span>':''}<div style="margin-top:6px">${esc(j.answer)}</div></div>${table}`;
+   box.innerHTML=`<div class="refuse"><b>我拒答了：</b>${esc(j.reason)}<br><span class="pill bad">refused: true</span><span class="pill bad">modelCalled: false</span>${isExp()?'<span class="pill warn">实验参数生效中</span>':''}${j.simulateBadModel?'<span class="pill bad">坏模型同样一次都没被调用</span>':''}<div style="margin-top:6px">${esc(j.answer)}</div></div>${table}`;
   }else if(j.mode==='bad-model'){
    const blockedTexts=new Set(j.blockedItems.map(b=>b.text));
    const rawLines=j.rawAnswer.split('\n').filter(l=>l.trim()).map(l=>{
@@ -378,14 +475,14 @@ async function doAsk(){
     const item=j.blockedItems.find(b=>b.text===l);
     return `<div class="rawline ${bad?'badline':'goodline'}">${esc(l)}${bad?`<br><span class="pill bad" style="text-decoration:none">${esc(item.reason)}</span>`:' <span class="pill ok" style="text-decoration:none">放行</span>'}</div>`;
    }).join('');
-   box.innerHTML=`<div class="kv"><span class="pill bad">mode: bad-model</span><span class="pill warn">modelCalled: true（坏模型被真实调用）</span><span class="pill bad">拦截 ${j.blocked} 条</span><span class="pill ok">命中 ${j.hits.length} 条（top-k=${j.k}，分数 &gt; ${j.threshold}）</span></div>
+   box.innerHTML=`<div class="kv"><span class="pill bad">mode: bad-model</span><span class="pill warn">modelCalled: true（坏模型被真实调用）</span><span class="pill bad">拦截 ${j.blocked} 条</span><span class="pill ok">命中 ${j.hits.length} 条（top-k=${j.k}，分数 &gt; ${j.threshold}）</span>${isExp()?'<span class="pill warn">实验参数生效中</span>':''}</div>
     <div class="refuse"><b>对照结论：</b>${esc(j.reason)}</div>
     <div class="rawbox"><b>坏模型原始输出（审计前，逐行示众）：</b>${rawLines}</div>
     <div class="answer"><b>引用强制闸过滤后（仅放行可溯源条目）：</b>\n${cites(j.answer,j.hits.length,'ask')}</div>
     <div class="blockedbox"><b>被拦条目（${j.blocked}）：</b>${j.blockedItems.map(b=>`<div class="blocked-item">${esc(b.text)}<br><span class="pill bad">${esc(b.reason)}</span>${b.urls.map(u=>`<span class="u">${esc(u)}</span>`).join(' ')}</div>`).join('')}</div>
     ${hitsHtml(j.hits,'ask')}${table}`;
   }else{
-   box.innerHTML=`<div class="kv"><span class="pill ok">命中 ${j.hits.length} 条（top-k=${j.k}，分数 &gt; ${j.threshold}）</span><span class="pill info">mode: ${esc(j.mode)}</span><span class="pill info">modelCalled: ${j.modelCalled}</span><span class="pill info">点击 [n] 查看原文证据</span></div>
+   box.innerHTML=`<div class="kv"><span class="pill ok">命中 ${j.hits.length} 条（top-k=${j.k}，分数 &gt; ${j.threshold}）</span><span class="pill info">mode: ${esc(j.mode)}</span><span class="pill info">modelCalled: ${j.modelCalled}</span>${isExp()?'<span class="pill warn">实验参数生效中</span>':''}<span class="pill info">点击 [n] 查看原文证据</span></div>
     <div class="answer">${cites(j.answer,j.hits.length,'ask')}</div>
     ${hitsHtml(j.hits,'ask')}${table}`;
   }
@@ -426,15 +523,15 @@ async function doPlan(){
 async function doResources(){
  const box=el('res-out');
  try{
-  const body={steps:plan.steps.map(s=>s.title),simulateBadModel:badOn()};
+  const body={steps:plan.steps.map(s=>s.title),simulateBadModel:badOn(),...expBody()};
   if(el('inject-fake').checked)body.candidateItems=[{title:'史上最强三天速成课',url:'https://definitely-not-in-corpus.example.com/awesome-course',type:'video',description:'我故意编造的条目'}];
   const j=await post('resources',body);
-  if(j.refused){box.innerHTML=`<div class="refuse"><b>代码级拒答：</b>${esc(j.reason)}<br><span class="pill bad">modelCalled: false</span>${j.simulateBadModel?'<span class="pill bad">坏模型同样一次都没被调用</span>':''}</div>`;return}
+  if(j.refused){box.innerHTML=`<div class="refuse"><b>代码级拒答：</b>${esc(j.reason)}<br><span class="pill bad">modelCalled: false</span>${isExp()?'<span class="pill warn">实验参数生效中</span>':''}${j.simulateBadModel?'<span class="pill bad">坏模型同样一次都没被调用</span>':''}</div>`;return}
   evStore.res=j.resources;
   const blockedBox=j.blocked?`<div class="blockedbox"><b>被拦条目（${j.blocked}，当场示众）：</b>${j.blockedItems.map(b=>`<div class="blocked-item"><b>${esc(b.title||'（无标题）')}</b><br><span class="u">${esc(b.url||'（无 URL）')}</span><br><span class="pill bad">${esc(b.reason)}</span></div>`).join('')}</div>`:'';
   box.innerHTML=`<div class="kv"><span class="pill ok">白名单候选 ${j.whitelist.length} 条</span>
    ${j.blocked?`<span class="pill bad">拦下编造条目 ${j.blocked} 条</span>`:'<span class="pill ok">无编造条目</span>'}
-   <span class="pill info">modelCalled: ${j.modelCalled}</span>${j.mode==='bad-model'?'<span class="pill bad">mode: bad-model（坏模型被真实调用，输出仍被过滤）</span>':''}</div>
+   <span class="pill info">modelCalled: ${j.modelCalled}</span>${isExp()?'<span class="pill warn">实验参数生效中</span>':''}${j.mode==='bad-model'?'<span class="pill bad">mode: bad-model（坏模型被真实调用，输出仍被过滤）</span>':''}</div>
    ${j.reason?`<div class="refuse">${esc(j.reason)}</div>`:''}
    ${j.resources.map((r,i)=>`<div class="hit" onclick="openEvidence('res',${i})" title="点击查看语料原文与命中高亮">
     <button class="cite" onclick="event.stopPropagation();openEvidence('res',${i})">[${i+1}]</button>
@@ -508,6 +605,9 @@ async function doTutor(){
   renderProfile(profile);
  }
  const j=await get('quiz');quiz=j.quiz;renderQuiz();
+ bindTangle();renderTangle();
+ if(!el('ask-q').value.trim())el('ask-q').value='学习 LangGraph';
+ doAsk(); // 首屏即有检索结论，拖动论文数字立刻看到联动
 })().catch(e=>{el('quiz-out').innerHTML='<span class="err">'+esc(e.message)+'</span>'});
 </script>
 </body>

@@ -6,6 +6,8 @@
 // SQLite 跨会话记忆与真实 LLM 调用在本地完整版。无 Key 一律走规则兜底，绝不编造。
 // v1.1：证据锚点（hits/resources 附 excerpt/offset/marks 字符区间）+ simulateBadModel 坏模型对照
 //（注入永远编造的演示模型，阈值/拒答/白名单/引用强制照常执行，blockedItems 逐条示众）。
+// v1.2：Tangle 式反应式参数——ask/resources 可选 params 覆盖 {k1,b,eps,threshold,k}，
+// 严格边界校验（越界 400）；不传 = 生产参数，与本地完整版对拍口径不变。
 import { SEED, CORPUS_SOURCE, RESOURCE_RELEVANCE } from './seed.mjs';
 import { buildRetriever, retrieve, allScores, tokenize } from './bm25.mjs';
 
@@ -13,9 +15,46 @@ const MAX_BODY = 100_000;
 const MIN_SCORE = 2.0;   // app/rag.py retrieve() 默认阈值
 const K = 4;             // app/rag.py retrieve() 默认 k
 const MAX_ROUNDS = 4;    // app/agents/tutor_agent.py MAX_ROUNDS
-const VERSION = 'learning-agent-playground-1.1.0';
+const VERSION = 'learning-agent-playground-1.2.0';
 
 const RETRIEVER = buildRetriever(SEED.corpus);
+
+/* ---- Tangle 实验参数：生产默认值 + 严格边界（越界/非法类型一律 400） ---- */
+const PROD_PARAMS = Object.freeze({ k1: 1.5, b: 0.75, eps: 0.25, threshold: MIN_SCORE, k: K });
+const PARAM_BOUNDS = Object.freeze({
+  k1: { min: 0.5, max: 3, int: false },
+  b: { min: 0, max: 1, int: false },
+  eps: { min: 0, max: 1, int: false },
+  threshold: { min: 0, max: 6, int: false },
+  k: { min: 1, max: 12, int: true },
+});
+export function resolveParams(input) {
+  if (input === undefined) return { ...PROD_PARAMS };
+  if (!input || typeof input !== 'object' || Array.isArray(input)) throw new Error('params 必须是对象');
+  const out = { ...PROD_PARAMS };
+  for (const [key, v] of Object.entries(input)) {
+    const bound = PARAM_BOUNDS[key];
+    if (!bound) throw new Error(`params 含未知字段 ${key}（允许：${Object.keys(PARAM_BOUNDS).join('/')}）`);
+    if (typeof v !== 'number' || !Number.isFinite(v)) throw new Error(`params.${key} 必须是有限数字`);
+    if (v < bound.min || v > bound.max) throw new Error(`params.${key} 越界（允许 ${bound.min}–${bound.max}）`);
+    if (bound.int && !Number.isInteger(v)) throw new Error(`params.${key} 必须是整数`);
+    out[key] = v;
+  }
+  return out;
+}
+/* 实验参数检索器缓存：同参数复用，避免每次拖动重建索引；生产参数直接用 RETRIEVER */
+const retrieverCache = new Map();
+function retrieverFor(p) {
+  if (p.k1 === PROD_PARAMS.k1 && p.b === PROD_PARAMS.b && p.eps === PROD_PARAMS.eps) return RETRIEVER;
+  const key = `${p.k1}|${p.b}|${p.eps}`;
+  let r = retrieverCache.get(key);
+  if (!r) {
+    r = buildRetriever(SEED.corpus, { k1: p.k1, b: p.b, epsilon: p.eps });
+    if (retrieverCache.size >= 64) retrieverCache.delete(retrieverCache.keys().next().value);
+    retrieverCache.set(key, r);
+  }
+  return r;
+}
 
 const json = (status, body) => Response.json(body, { status, headers: { 'cache-control': 'no-store' } });
 const fail = (msg) => json(400, { ok: false, error: msg });
@@ -181,17 +220,19 @@ function badResourceModel(context, allowed) {
 
 /* ---- 检索问答：BM25 + 阈值过滤 + 空检索代码级拒答（防幻觉第①②道） ---- */
 export function answerQuery(query, opts = {}) {
+  const p = resolveParams(opts.params);
+  const retriever = retrieverFor(p);
   const bad = opts.simulateBadModel === true;
   // 注入点：等价于 pytest 里 patch get_structured_model；bad 模式注入「永远编造」的坏模型
   const callModel = opts.callModel || (bad ? badAskModel : null);
-  const scores = allScores(RETRIEVER, query);
-  const hits = withEvidence(retrieve(RETRIEVER, query, K, MIN_SCORE), query);
+  const scores = allScores(retriever, query);
+  const hits = withEvidence(retrieve(retriever, query, p.k, p.threshold), query);
   const maxScore = scores.length ? scores[0].score : 0;
   if (!hits.length) {
     // 第②道守卫：无事实依据 → 直接拒答，根本不调用模型（机制，不是期望；坏模型同样不被调用）
     return {
-      ok: true, query, threshold: MIN_SCORE, k: K, refused: true, modelCalled: false, mode: 'refused',
-      reason: `资料库中无相关内容：全部 ${scores.length} 条候选的 BM25 分均 ≤ 阈值 ${MIN_SCORE}（最高 ${maxScore.toFixed(4)}）。代码级拒答，未调用模型。`,
+      ok: true, query, threshold: p.threshold, k: p.k, params: p, refused: true, modelCalled: false, mode: 'refused',
+      reason: `资料库中无相关内容：全部 ${scores.length} 条候选的 BM25 分均 ≤ 阈值 ${p.threshold}（最高 ${maxScore.toFixed(4)}）。代码级拒答，未调用模型。`,
       answer: '资料库里确实没有这个主题的内容，我拒绝编造答案。建议换用资料库覆盖的话题（Python / FastAPI / LangGraph / RAG / Docker / 算法 / 网络 / SQL / 机器学习），或在本地完整版中扩充知识库。',
       hits: [], scores, simulateBadModel: bad,
     };
@@ -211,7 +252,7 @@ export function answerQuery(query, opts = {}) {
     mode = modelCalled ? 'rule-fallback' : 'rules';
     answer = ruleAnswer;
   }
-  const base = { ok: true, query, threshold: MIN_SCORE, k: K, refused: false, modelCalled, mode, reason: '', answer, hits, scores, simulateBadModel: bad };
+  const base = { ok: true, query, threshold: p.threshold, k: p.k, params: p, refused: false, modelCalled, mode, reason: '', answer, hits, scores, simulateBadModel: bad };
   if (mode === 'bad-model') {
     // 第③道闸（引用强制）：坏模型照常返回编造内容，但输出逐行审计后才放行
     const rawAnswer = answer;
@@ -243,17 +284,19 @@ export function enforceWhitelist(items, allowed) {
 }
 
 export function buildResources(input, opts = {}) {
+  const p = resolveParams(opts.params);
+  const retriever = retrieverFor(p);
   const bad = opts.simulateBadModel === true;
   const callModel = opts.callModel || (bad ? badResourceModel : null);
   const steps = Array.isArray(input?.steps) ? input.steps.slice(0, 8) : [];
-  // 第①步：按计划步骤逐一检索（k=4、阈值 2.0），构建本轮白名单
+  // 第①步：按计划步骤逐一检索（默认 k=4、阈值 2.0；params 可实验覆盖），构建本轮白名单
   const seen = new Set();
   const allowed = {};
   const parts = [];
   for (const q of steps) {
     const title = optStr(q, 120);
     if (!title) continue;
-    for (const doc of retrieve(RETRIEVER, title, K, MIN_SCORE)) {
+    for (const doc of retrieve(retriever, title, p.k, p.threshold)) {
       if (doc.title && !seen.has(doc.title)) {
         seen.add(doc.title);
         allowed[doc.title] = doc.url;
@@ -264,7 +307,7 @@ export function buildResources(input, opts = {}) {
   const context = parts.join('\n\n');
   // 第②步：检索为空 → 代码级拒答，不调用模型（坏模型同样一次都不被调用）
   if (!context) {
-    return { ok: true, refused: true, modelCalled: false, mode: 'refused', resources: [], blocked: 0, blockedItems: [], whitelist: [], simulateBadModel: bad, reason: '计划步骤在资料库中均无相关命中（BM25 阈值过滤后为空），代码级拒答，未调用模型。' };
+    return { ok: true, refused: true, modelCalled: false, mode: 'refused', resources: [], blocked: 0, blockedItems: [], whitelist: [], simulateBadModel: bad, params: p, reason: '计划步骤在资料库中均无相关命中（BM25 阈值过滤后为空），代码级拒答，未调用模型。' };
   }
   // 第③步：候选条目（有模型走模型；无 Key 用规则候选）→ 白名单过滤
   let items;
@@ -294,7 +337,7 @@ export function buildResources(input, opts = {}) {
   return {
     ok: true, refused: false, modelCalled, mode, resources, blocked, blockedItems,
     whitelist: Object.entries(allowed).map(([title, url]) => ({ title, url })),
-    simulateBadModel: bad,
+    simulateBadModel: bad, params: p,
     reason: blocked ? `白名单拦下 ${blocked} 条无法溯源的条目（URL 与标题均不在本轮检索候选内）。` : '',
   };
 }
@@ -521,7 +564,7 @@ export async function handleLearningAgent({ request, env }) {
   const tool = new URL(request.url).pathname.split('/').filter(Boolean).pop() ?? '';
   try {
     if (request.method === 'GET') {
-      if (tool === 'health') return json(200, { ok: true, version: VERSION, mode: 'rules', corpusSize: SEED.corpus.length, threshold: MIN_SCORE, k: K, maxRounds: MAX_ROUNDS, features: ['evidence-anchors', 'bad-model-simulation'], time: new Date().toISOString() });
+      if (tool === 'health') return json(200, { ok: true, version: VERSION, mode: 'rules', corpusSize: SEED.corpus.length, threshold: MIN_SCORE, k: K, maxRounds: MAX_ROUNDS, features: ['evidence-anchors', 'bad-model-simulation', 'reactive-params'], paramBounds: PARAM_BOUNDS, time: new Date().toISOString() });
       if (tool === 'corpus') return json(200, { ok: true, source: CORPUS_SOURCE, docs: SEED.corpus });
       if (tool === 'quiz') return json(200, { ok: true, quiz: SEED.quiz });
       if (tool === 'plan') return json(200, { ok: true, plan: SEED.plan, source: '规则版规划（与本地零 Key 样例同源）' });
@@ -532,8 +575,8 @@ export async function handleLearningAgent({ request, env }) {
     const b = await body(request);
     if (tool === 'profile') return json(200, { ok: true, profile: buildProfile(b) });
     if (tool === 'plan') return json(200, { ok: true, plan: SEED.plan, source: '规则版规划（与本地零 Key 样例同源）' });
-    if (tool === 'ask') return json(200, answerQuery(str(b.query, 'query', 200), { simulateBadModel: b.simulateBadModel === true }));
-    if (tool === 'resources') return json(200, buildResources(b, { simulateBadModel: b.simulateBadModel === true }));
+    if (tool === 'ask') return json(200, answerQuery(str(b.query, 'query', 200), { simulateBadModel: b.simulateBadModel === true, params: b.params }));
+    if (tool === 'resources') return json(200, buildResources(b, { simulateBadModel: b.simulateBadModel === true, params: b.params }));
     if (tool === 'grade') return json(200, gradeQuiz(b.answers));
     if (tool === 'review') return json(200, buildReview(b));
     if (tool === 'tutor') return json(200, await runTutor(b, env));
@@ -543,4 +586,4 @@ export async function handleLearningAgent({ request, env }) {
   }
 }
 
-export { tokenize, MIN_SCORE, K, MAX_ROUNDS, RETRIEVER };
+export { tokenize, MIN_SCORE, K, MAX_ROUNDS, RETRIEVER, PROD_PARAMS, PARAM_BOUNDS };
