@@ -4,6 +4,8 @@
 // （app/agents/tutor_agent.py _run_policy_react，4 轮上限 + trace 审计）。
 // 公网版为无状态演示：学情由浏览器 localStorage 随请求传入；完整 LangGraph 8 节点编排、
 // SQLite 跨会话记忆与真实 LLM 调用在本地完整版。无 Key 一律走规则兜底，绝不编造。
+// v1.1：证据锚点（hits/resources 附 excerpt/offset/marks 字符区间）+ simulateBadModel 坏模型对照
+//（注入永远编造的演示模型，阈值/拒答/白名单/引用强制照常执行，blockedItems 逐条示众）。
 import { SEED, CORPUS_SOURCE, RESOURCE_RELEVANCE } from './seed.mjs';
 import { buildRetriever, retrieve, allScores, tokenize } from './bm25.mjs';
 
@@ -11,7 +13,7 @@ const MAX_BODY = 100_000;
 const MIN_SCORE = 2.0;   // app/rag.py retrieve() 默认阈值
 const K = 4;             // app/rag.py retrieve() 默认 k
 const MAX_ROUNDS = 4;    // app/agents/tutor_agent.py MAX_ROUNDS
-const VERSION = 'learning-agent-playground-1.0.0';
+const VERSION = 'learning-agent-playground-1.1.0';
 
 const RETRIEVER = buildRetriever(SEED.corpus);
 
@@ -100,53 +102,149 @@ export function buildProfile(b) {
   return p;
 }
 
+/* ---- 证据锚点：从语料原文截取命中 bigram 周边窗口，给出可高亮的字符区间 ----
+ * marks 为 content 内的绝对字符区间（合并重叠后），excerpt = content.slice(offset.start, offset.end)。
+ * UI 点击 [n] 时展示原文并按 marks 打 <mark>，实现「结论 → 原文字符级」溯源。 */
+export function annotateEvidence(content, query, before = 60, after = 100) {
+  const text = String(content ?? '');
+  const low = text.toLowerCase();
+  const tokens = [...new Set(tokenize(query))].filter(Boolean);
+  const ranges = [];
+  for (const t of tokens) {
+    let idx = low.indexOf(t);
+    while (idx !== -1 && ranges.length < 400) {
+      ranges.push({ start: idx, end: idx + t.length });
+      idx = low.indexOf(t, idx + t.length);
+    }
+  }
+  ranges.sort((a, b) => a.start - b.start || a.end - b.end);
+  const marks = [];
+  for (const r of ranges) {
+    const last = marks[marks.length - 1];
+    if (last && r.start <= last.end) last.end = Math.max(last.end, r.end);
+    else marks.push({ start: r.start, end: r.end });
+  }
+  if (!marks.length) {
+    const end = Math.min(text.length, before + after);
+    return { excerpt: text.slice(0, end), offset: { start: 0, end }, marks: [] };
+  }
+  // 取命中最密集的锚点，向两侧扩窗
+  let best = marks[0], bestCount = 0;
+  for (const m of marks) {
+    const ws = Math.max(0, m.start - before), we = Math.min(text.length, m.end + after);
+    const count = marks.filter((x) => x.start < we && x.end > ws).length;
+    if (count > bestCount) { bestCount = count; best = m; }
+  }
+  const start = Math.max(0, best.start - before);
+  const end = Math.min(text.length, best.end + after);
+  return { excerpt: text.slice(start, end), offset: { start, end }, marks: marks.slice(0, 24) };
+}
+const withEvidence = (hits, query) => hits.map((h) => ({ ...h, ...annotateEvidence(h.content, query) }));
+
+/* ---- 坏模型对照（simulateBadModel）：把「模型」换成永远编造的坏模型，
+ * 阈值 / 空检索拒答 / 白名单 / 引用强制照常执行——约束不依赖模型自觉，机制可交互证明。 ---- */
+const FAKE_ASK_URL = 'https://fake-masterclass.example.com/secret-course';
+function badAskModel(query, hits) {
+  const real = hits[0];
+  return [
+    `我强烈推荐这个独家内部速成课，三天包会：${FAKE_ASK_URL} （全网找不到第二份）。`,
+    `另外据统计 99% 的学生看完就能精通，「${real.title}」已经被官方废弃，别学了。`,
+    `有据可查的部分：${real.title}（${real.url}）——这条来自资料库真实命中。`,
+  ].join('\n');
+}
+const URL_RE = /https?:\/\/[^\s（）()，。;；、]+/g;
+/* 引用强制闸：bad-model 输出逐行审计——含白名单外 URL = 编造链接；
+ * 未引用任何白名单来源 = 无据断言；两者都拦，只放行可溯源行。 */
+export function filterBadAnswer(raw, hits) {
+  const allowed = new Set(hits.map((h) => h.url));
+  const kept = [];
+  const blockedItems = [];
+  for (const line of String(raw).split('\n')) {
+    if (!line.trim()) continue;
+    const urls = line.match(URL_RE) || [];
+    const fake = urls.filter((u) => !allowed.has(u));
+    if (fake.length) blockedItems.push({ text: line, urls: fake, reason: '编造链接：URL 不在本轮检索白名单内' });
+    else if (!urls.length) blockedItems.push({ text: line, urls: [], reason: '无据断言：未引用任何白名单来源' });
+    else kept.push(line);
+  }
+  return { kept, blockedItems };
+}
+function badResourceModel(context, allowed) {
+  const real = Object.entries(allowed)[0];
+  const items = [
+    { title: '三天精通一切·内部绝密速成课', url: FAKE_ASK_URL, type: 'video', description: '编造的独家课程，白名单里根本没有它' },
+    { title: '官方已废弃全部现有教程', url: 'https://another-made-up.example.com/deprecated', type: 'doc', description: '编造链接 + 无据断言' },
+  ];
+  if (real) items.push({ title: real[0], url: real[1], type: 'doc', description: '这条是资料库真实命中，应当放行' });
+  return items;
+}
+
 /* ---- 检索问答：BM25 + 阈值过滤 + 空检索代码级拒答（防幻觉第①②道） ---- */
 export function answerQuery(query, opts = {}) {
-  const callModel = opts.callModel || null; // 注入点：等价于 pytest 里 patch get_structured_model
+  const bad = opts.simulateBadModel === true;
+  // 注入点：等价于 pytest 里 patch get_structured_model；bad 模式注入「永远编造」的坏模型
+  const callModel = opts.callModel || (bad ? badAskModel : null);
   const scores = allScores(RETRIEVER, query);
-  const hits = retrieve(RETRIEVER, query, K, MIN_SCORE);
+  const hits = withEvidence(retrieve(RETRIEVER, query, K, MIN_SCORE), query);
   const maxScore = scores.length ? scores[0].score : 0;
   if (!hits.length) {
-    // 第②道守卫：无事实依据 → 直接拒答，根本不调用模型（机制，不是期望）
+    // 第②道守卫：无事实依据 → 直接拒答，根本不调用模型（机制，不是期望；坏模型同样不被调用）
     return {
       ok: true, query, threshold: MIN_SCORE, k: K, refused: true, modelCalled: false, mode: 'refused',
       reason: `资料库中无相关内容：全部 ${scores.length} 条候选的 BM25 分均 ≤ 阈值 ${MIN_SCORE}（最高 ${maxScore.toFixed(4)}）。代码级拒答，未调用模型。`,
       answer: '资料库里确实没有这个主题的内容，我拒绝编造答案。建议换用资料库覆盖的话题（Python / FastAPI / LangGraph / RAG / Docker / 算法 / 网络 / SQL / 机器学习），或在本地完整版中扩充知识库。',
-      hits: [], scores,
+      hits: [], scores, simulateBadModel: bad,
     };
   }
+  // 无 Key 规则兜底：答案只由检索命中的真实正文拼成，逐条附 [n] 编号出处（证据锚点）
+  const ruleAnswer = '我只在资料库命中的真实资料范围内回答：\n' +
+    hits.map((h, i) => `[${i + 1}]【${h.title}】${h.content.split('\n').slice(1).join(' ')}（出处：${h.url}）`).join('\n');
   let answer;
   let modelCalled = false;
   let mode = 'rules';
   if (callModel) {
     answer = String(callModel(query, hits) ?? '');
     modelCalled = true;
-    mode = 'llm';
+    mode = bad ? 'bad-model' : 'llm';
   }
   if (!modelCalled || !answer.trim()) {
-    // 无 Key 规则兜底：答案只由检索命中的真实正文拼成，逐条附出处
     mode = modelCalled ? 'rule-fallback' : 'rules';
-    answer = '我只在资料库命中的真实资料范围内回答：\n' +
-      hits.map((h) => `【${h.title}】${h.content.split('\n').slice(1).join(' ')}（出处：${h.url}）`).join('\n');
+    answer = ruleAnswer;
   }
-  return { ok: true, query, threshold: MIN_SCORE, k: K, refused: false, modelCalled, mode, reason: '', answer, hits, scores };
+  const base = { ok: true, query, threshold: MIN_SCORE, k: K, refused: false, modelCalled, mode, reason: '', answer, hits, scores, simulateBadModel: bad };
+  if (mode === 'bad-model') {
+    // 第③道闸（引用强制）：坏模型照常返回编造内容，但输出逐行审计后才放行
+    const rawAnswer = answer;
+    const { kept, blockedItems } = filterBadAnswer(rawAnswer, hits);
+    return {
+      ...base,
+      rawAnswer,
+      answer: kept.length ? kept.join('\n') : ruleAnswer,
+      blocked: blockedItems.length,
+      blockedItems,
+      whitelist: hits.map((h) => ({ title: h.title, url: h.url })),
+      reason: `坏模型被真实调用（modelCalled=true），输出 ${rawAnswer.split('\n').filter((l) => l.trim()).length} 条断言；引用强制闸拦下 ${blockedItems.length} 条（编造链接 / 无据断言），仅放行可溯源条目。`,
+    };
+  }
+  return base;
 }
 
 /* ---- 资源推荐：白名单兜底（防幻觉第③道），与 resource_agent.py 同判据 ---- */
 export function enforceWhitelist(items, allowed) {
   const allowedUrls = new Set(Object.values(allowed));
   const kept = [];
-  let blocked = 0;
+  const blockedItems = [];
   for (const it of items) {
     if (it.url && allowedUrls.has(it.url)) kept.push(it);
     else if (it.title && Object.prototype.hasOwnProperty.call(allowed, it.title)) kept.push({ ...it, url: allowed[it.title] });
-    else blocked += 1; // 既对不上 URL 也对不上标题 = 编造条目
+    else blockedItems.push({ title: it.title || '', url: it.url || '', description: it.description || '', reason: 'URL 与标题均不在本轮检索白名单内，无从溯源' });
   }
-  return { kept, blocked };
+  return { kept, blocked: blockedItems.length, blockedItems };
 }
 
 export function buildResources(input, opts = {}) {
-  const callModel = opts.callModel || null;
+  const bad = opts.simulateBadModel === true;
+  const callModel = opts.callModel || (bad ? badResourceModel : null);
   const steps = Array.isArray(input?.steps) ? input.steps.slice(0, 8) : [];
   // 第①步：按计划步骤逐一检索（k=4、阈值 2.0），构建本轮白名单
   const seen = new Set();
@@ -164,28 +262,39 @@ export function buildResources(input, opts = {}) {
     }
   }
   const context = parts.join('\n\n');
-  // 第②步：检索为空 → 代码级拒答，不调用模型
+  // 第②步：检索为空 → 代码级拒答，不调用模型（坏模型同样一次都不被调用）
   if (!context) {
-    return { ok: true, refused: true, modelCalled: false, resources: [], blocked: 0, whitelist: [], reason: '计划步骤在资料库中均无相关命中（BM25 阈值过滤后为空），代码级拒答，未调用模型。' };
+    return { ok: true, refused: true, modelCalled: false, mode: 'refused', resources: [], blocked: 0, blockedItems: [], whitelist: [], simulateBadModel: bad, reason: '计划步骤在资料库中均无相关命中（BM25 阈值过滤后为空），代码级拒答，未调用模型。' };
   }
   // 第③步：候选条目（有模型走模型；无 Key 用规则候选）→ 白名单过滤
   let items;
   let modelCalled = false;
+  let mode = 'rules';
   if (callModel) {
     items = callModel(context, allowed) || [];
     modelCalled = true;
+    mode = bad ? 'bad-model' : 'llm';
   } else if (Array.isArray(input?.candidateItems)) {
     items = input.candidateItems.slice(0, 10); // 演示注入：模拟模型输出（含编造条目）以展示拦截
+    mode = 'injected';
   } else {
     items = Object.entries(allowed).slice(0, 4).map(([title, url]) => {
       const doc = SEED.corpus.find((d) => d.title === title);
       return { title, url, type: doc?.type || 'doc', description: (doc?.content || '').slice(0, 60) + '…', relevance: RESOURCE_RELEVANCE };
     });
   }
-  const { kept, blocked } = enforceWhitelist(items, allowed);
+  const { kept, blocked, blockedItems } = enforceWhitelist(items, allowed);
+  // 证据锚点：放行条目附上语料原文窗口与字符区间（按计划步骤词命中高亮）
+  const stepQuery = steps.map((s) => optStr(s, 120)).filter(Boolean).join(' ');
+  const resources = kept.map((r) => {
+    const doc = SEED.corpus.find((d) => d.url === r.url);
+    const content = doc ? `${doc.title}\n${doc.content}` : '';
+    return { ...r, content, ...annotateEvidence(content, stepQuery) };
+  });
   return {
-    ok: true, refused: false, modelCalled, resources: kept, blocked,
+    ok: true, refused: false, modelCalled, mode, resources, blocked, blockedItems,
     whitelist: Object.entries(allowed).map(([title, url]) => ({ title, url })),
+    simulateBadModel: bad,
     reason: blocked ? `白名单拦下 ${blocked} 条无法溯源的条目（URL 与标题均不在本轮检索候选内）。` : '',
   };
 }
@@ -412,7 +521,7 @@ export async function handleLearningAgent({ request, env }) {
   const tool = new URL(request.url).pathname.split('/').filter(Boolean).pop() ?? '';
   try {
     if (request.method === 'GET') {
-      if (tool === 'health') return json(200, { ok: true, version: VERSION, mode: 'rules', corpusSize: SEED.corpus.length, threshold: MIN_SCORE, k: K, maxRounds: MAX_ROUNDS, time: new Date().toISOString() });
+      if (tool === 'health') return json(200, { ok: true, version: VERSION, mode: 'rules', corpusSize: SEED.corpus.length, threshold: MIN_SCORE, k: K, maxRounds: MAX_ROUNDS, features: ['evidence-anchors', 'bad-model-simulation'], time: new Date().toISOString() });
       if (tool === 'corpus') return json(200, { ok: true, source: CORPUS_SOURCE, docs: SEED.corpus });
       if (tool === 'quiz') return json(200, { ok: true, quiz: SEED.quiz });
       if (tool === 'plan') return json(200, { ok: true, plan: SEED.plan, source: '规则版规划（与本地零 Key 样例同源）' });
@@ -423,8 +532,8 @@ export async function handleLearningAgent({ request, env }) {
     const b = await body(request);
     if (tool === 'profile') return json(200, { ok: true, profile: buildProfile(b) });
     if (tool === 'plan') return json(200, { ok: true, plan: SEED.plan, source: '规则版规划（与本地零 Key 样例同源）' });
-    if (tool === 'ask') return json(200, answerQuery(str(b.query, 'query', 200)));
-    if (tool === 'resources') return json(200, buildResources(b));
+    if (tool === 'ask') return json(200, answerQuery(str(b.query, 'query', 200), { simulateBadModel: b.simulateBadModel === true }));
+    if (tool === 'resources') return json(200, buildResources(b, { simulateBadModel: b.simulateBadModel === true }));
     if (tool === 'grade') return json(200, gradeQuiz(b.answers));
     if (tool === 'review') return json(200, buildReview(b));
     if (tool === 'tutor') return json(200, await runTutor(b, env));

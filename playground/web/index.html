@@ -6,23 +6,45 @@
 <link rel="icon" href="data:,">
 <title>学习闭环 Agent · StudyHack 参赛演示</title>
 <style>
- :root{--ink:#1e293b;--sub:#64748b;--line:#e2e8f0;--bg:#f4f6fb;--card:#fff;--pri:#4f46e5;--pri-soft:#eef2ff;--ok:#16a34a;--ok-soft:#f0fdf4;--warn:#b45309;--warn-soft:#fffbeb;--bad:#dc2626;--bad-soft:#fef2f2}
+ :root{--ink:#1e293b;--sub:#64748b;--line:#e2e8f0;--bg:#f4f6fb;--card:#fff;--pri:#4f46e5;--pri-soft:#eef2ff;--ok:#16a34a;--ok-soft:#f0fdf4;--warn:#b45309;--warn-soft:#fffbeb;--bad:#dc2626;--bad-soft:#fef2f2;--dark:#0f172a;--dark2:#1e293b}
  *{box-sizing:border-box}
+ html{scroll-behavior:smooth}
  body{margin:0;font-family:system-ui,"Segoe UI","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--ink);line-height:1.6}
- .wrap{max-width:960px;margin:0 auto;padding:24px 16px 80px}
- header.hero{padding:28px 0 8px}
- .badge{display:inline-block;background:var(--pri-soft);color:var(--pri);border:1px solid #c7d2fe;border-radius:999px;padding:2px 12px;font-size:12px;margin:0 6px 6px 0}
- h1{font-size:26px;margin:8px 0 4px}
- .sub{color:var(--sub);font-size:14px;margin:0}
- .tip{background:var(--pri-soft);border:1px solid #c7d2fe;border-radius:10px;padding:12px 14px;font-size:13px;margin:16px 0}
- .graph{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:14px 0;font-size:12px}
- .gnode{background:#fff;border:1px solid var(--line);border-radius:8px;padding:3px 10px}
- .gnode.agent{border-color:#c7d2fe;background:var(--pri-soft);color:var(--pri);font-weight:600}
- .garrow{color:var(--sub)}
- .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px;margin:16px 0}
- .card h2{font-size:17px;margin:0 0 4px;display:flex;align-items:center;gap:8px}
+ .wrap{max-width:960px;margin:0 auto;padding:14px 16px 80px}
+ /* ---- 深色 hero 条 + 可点击管线步骤条 ---- */
+ .hero{background:linear-gradient(120deg,var(--dark) 0%,var(--dark2) 60%,#312e81 100%);color:#e2e8f0;padding:16px 0 12px}
+ .hero-in{max-width:960px;margin:0 auto;padding:0 16px}
+ .hero-top{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap}
+ .hero h1{font-size:22px;margin:4px 0 2px;color:#fff}
+ .hero h1 .ver{font-size:12px;font-weight:400;color:#a5b4fc;margin-left:8px}
+ .hbadge{display:inline-block;background:rgba(99,102,241,.18);color:#c7d2fe;border:1px solid rgba(129,140,248,.4);border-radius:999px;padding:1px 10px;font-size:11px;margin:0 6px 2px 0}
+ .hero-sub{color:#94a3b8;font-size:12px;margin:2px 0 0;max-width:560px}
+ /* 坏模型对照开关 */
+ .switch-wrap{display:flex;align-items:center;gap:10px;cursor:pointer;background:rgba(15,23,42,.5);border:1px solid #334155;border-radius:12px;padding:8px 12px;user-select:none}
+ .switch-wrap:hover{border-color:#6366f1}
+ .switch{position:relative;width:42px;height:24px;flex:0 0 auto}
+ .switch input{position:absolute;opacity:0;width:100%;height:100%;margin:0;cursor:pointer}
+ .switch i{position:absolute;inset:0;background:#334155;border-radius:999px;transition:background .25s;pointer-events:none}
+ .switch i::after{content:"";position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;background:#cbd5e1;transition:transform .25s,background .25s}
+ .switch input:checked+i{background:var(--bad)}
+ .switch input:checked+i::after{transform:translateX(18px);background:#fff}
+ .switch-text b{display:block;font-size:13px;color:#fca5a5}
+ .switch-text small{display:block;font-size:11px;color:#94a3b8}
+ body.bad-on .switch-wrap{border-color:var(--bad);box-shadow:0 0 0 1px rgba(220,38,38,.4)}
+ /* 管线步骤条 */
+ .pipeline{display:flex;flex-wrap:wrap;gap:4px;align-items:center;margin-top:12px;font-size:12px}
+ .pnode{background:rgba(30,41,59,.85);border:1px solid #475569;color:#cbd5e1;border-radius:8px;padding:3px 10px;font-size:12px;cursor:pointer;font-family:ui-monospace,Consolas,monospace;margin:0;transition:border-color .2s,background .2s,transform .15s}
+ .pnode:hover{border-color:#818cf8;background:#312e81;color:#e0e7ff;transform:translateY(-1px)}
+ .pnode.agent{border-color:#818cf8;color:#a5b4fc;font-weight:600}
+ .parrow{color:#64748b;font-size:11px}
+ /* ---- 卡片与步骤徽章 ---- */
+ .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px;margin:14px 0;scroll-margin-top:14px}
+ .card h2{font-size:17px;margin:0 0 4px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
  .stepno{display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:50%;background:var(--pri);color:#fff;font-size:13px;flex:0 0 auto}
  .desc{color:var(--sub);font-size:13px;margin:0 0 12px}
+ .flash{animation:flash 1.2s ease}
+ @keyframes flash{0%{box-shadow:0 0 0 3px rgba(79,70,229,.55)}100%{box-shadow:0 0 0 0 rgba(79,70,229,0)}}
+ /* ---- 表单 ---- */
  label{display:block;font-size:13px;margin:10px 0 4px;color:var(--ink)}
  input,textarea,select{width:100%;border:1px solid #cbd5e1;border-radius:8px;padding:8px 10px;font-size:13px;font-family:inherit;background:#fff}
  textarea{min-height:64px;resize:vertical}
@@ -33,6 +55,14 @@
  button:disabled{opacity:.5;cursor:not-allowed}
  .small{font-size:12px;color:var(--sub)}
  .err{color:var(--bad);font-size:13px}
+ /* ---- 画像抽屉 ---- */
+ details.drawer{padding:0}
+ details.drawer>summary{list-style:none;cursor:pointer;padding:16px 18px;display:flex;align-items:center;gap:8px;font-size:16px;font-weight:600}
+ details.drawer>summary::-webkit-details-marker{display:none}
+ details.drawer>summary::after{content:"▸";margin-left:auto;color:var(--sub);transition:transform .2s}
+ details.drawer[open]>summary::after{transform:rotate(90deg)}
+ details.drawer>.drawer-body{padding:0 18px 18px;border-top:1px dashed var(--line)}
+ /* ---- 结果元素 ---- */
  .pill{display:inline-block;border-radius:999px;padding:1px 10px;font-size:12px;margin:2px 4px 2px 0;border:1px solid}
  .pill.ok{background:var(--ok-soft);border-color:#bbf7d0;color:var(--ok)}
  .pill.warn{background:var(--warn-soft);border-color:#fde68a;color:var(--warn)}
@@ -45,12 +75,41 @@
  td,th{border:1px solid var(--line);padding:5px 8px;text-align:left;vertical-align:top}
  th{background:#f8fafc}
  .bar{height:8px;border-radius:4px;background:#e2e8f0;overflow:hidden;min-width:80px}
- .bar i{display:block;height:100%;background:var(--pri)}
+ .bar i{display:block;height:100%;width:0;background:var(--pri);transition:width .7s cubic-bezier(.22,.9,.35,1)}
  .bar i.pass{background:var(--ok)}
  .refuse{background:var(--bad-soft);border:1px solid #fecaca;border-radius:10px;padding:12px 14px;font-size:13px;margin-top:12px}
  .answer{background:var(--ok-soft);border:1px solid #bbf7d0;border-radius:10px;padding:12px 14px;font-size:13px;margin-top:12px;white-space:pre-wrap}
- .hit{border-top:1px dashed var(--line);padding:8px 0;font-size:13px}
+ .hit{border-top:1px dashed var(--line);padding:8px 0;font-size:13px;cursor:pointer}
+ .hit:hover{background:#fafbff}
  .hit a{color:var(--pri);word-break:break-all}
+ .hit .excerpt{color:var(--sub);font-size:12px;margin-top:2px}
+ mark{background:#fde68a;color:#78350f;border-radius:3px;padding:0 1px}
+ /* 证据编号引用 [n] */
+ .cite{display:inline-flex;align-items:center;justify-content:center;min-width:22px;height:20px;padding:0 5px;margin:0 2px;border-radius:6px;background:var(--pri-soft);border:1px solid #c7d2fe;color:var(--pri);font-size:11px;font-weight:700;cursor:pointer;vertical-align:baseline;line-height:1}
+ .cite:hover{background:var(--pri);color:#fff}
+ /* 坏模型对照 */
+ .rawbox{background:#fff7ed;border:1px solid #fdba74;border-radius:10px;padding:12px 14px;font-size:13px;margin-top:12px}
+ .rawline{padding:5px 8px;border-radius:6px;margin:4px 0;white-space:pre-wrap}
+ .rawline.badline{background:var(--bad-soft);border:1px dashed #fecaca;color:#991b1b;text-decoration:line-through;text-decoration-color:rgba(220,38,38,.5)}
+ .rawline.goodline{background:var(--ok-soft);border:1px dashed #bbf7d0;color:#166534}
+ .blockedbox{background:var(--bad-soft);border:1px solid #fecaca;border-radius:10px;padding:12px 14px;font-size:13px;margin-top:12px}
+ .blocked-item{border-top:1px dashed #fecaca;padding:6px 0}
+ .blocked-item:first-of-type{border-top:0}
+ .blocked-item .u{font-family:ui-monospace,Consolas,monospace;font-size:11px;color:#991b1b;word-break:break-all}
+ .badnote{background:var(--bad-soft);border:1px solid #fecaca;color:#991b1b;border-radius:8px;padding:6px 10px;font-size:12px;margin-top:8px}
+ /* ---- 证据侧栏 ---- */
+ #ev-backdrop{position:fixed;inset:0;background:rgba(15,23,42,.45);opacity:0;pointer-events:none;transition:opacity .25s;z-index:40}
+ #ev-backdrop.show{opacity:1;pointer-events:auto}
+ #ev-panel{position:fixed;top:0;right:0;height:100%;width:min(430px,94vw);background:#fff;border-left:1px solid var(--line);box-shadow:-8px 0 30px rgba(15,23,42,.18);transform:translateX(105%);transition:transform .28s cubic-bezier(.22,.9,.35,1);z-index:50;display:flex;flex-direction:column}
+ #ev-panel.show{transform:translateX(0)}
+ .ev-head{display:flex;align-items:center;gap:8px;padding:14px 16px;border-bottom:1px solid var(--line)}
+ .ev-head b{font-size:14px;flex:1}
+ .ev-close{margin:0;background:#f1f5f9;color:var(--ink);border-radius:8px;padding:4px 10px;font-size:13px}
+ .ev-meta{padding:10px 16px 0;font-size:12px}
+ #ev-url{display:block;padding:2px 16px 10px;font-size:12px;color:var(--pri);word-break:break-all;border-bottom:1px dashed var(--line)}
+ .ev-body{padding:14px 16px;overflow-y:auto;flex:1;font-size:13px;white-space:pre-wrap;word-break:break-word}
+ .ev-foot{padding:8px 16px;border-top:1px solid var(--line);font-size:11px;color:var(--sub)}
+ /* ---- 其他 ---- */
  .q{border:1px solid var(--line);border-radius:10px;padding:12px;margin:10px 0;font-size:13px}
  .q label{display:flex;gap:8px;align-items:center;margin:6px 0;font-size:13px}
  .q input[type=radio]{width:auto}
@@ -61,67 +120,52 @@
  .trace td{font-family:ui-monospace,Consolas,monospace;font-size:11px}
  .cmp{background:var(--warn-soft);border:1px solid #fde68a;border-radius:10px;padding:12px 14px;font-size:13px;margin-top:12px}
  footer{margin-top:28px;font-size:12px;color:var(--sub)}
- .statusline{font-size:12px;color:var(--sub);margin-top:8px}
+ .statusline{font-size:12px;color:var(--sub)}
  .check{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--sub);margin-top:10px}
  .check input{width:auto}
+ #mem-strip{display:flex;align-items:center;gap:12px;flex-wrap:wrap;background:#fff;border:1px solid var(--line);border-radius:10px;padding:8px 14px;margin:0 0 14px;scroll-margin-top:14px}
+ #mem-strip button{margin:0;padding:4px 12px;font-size:12px}
+ details.tip-d{background:var(--pri-soft);border:1px solid #c7d2fe;border-radius:10px;padding:8px 14px;font-size:13px;margin:14px 0}
+ details.tip-d summary{cursor:pointer;font-size:12px;color:var(--pri)}
 </style>
 </head>
 <body>
+<div class="hero">
+  <div class="hero-in">
+    <div class="hero-top">
+      <div>
+        <span class="hbadge">2026 Qoder 高校创造力大赛 · StudyHack 主参赛作品</span>
+        <span class="hbadge">公网演示 v1.1 · 无 Key 规则兜底</span>
+        <h1>学习闭环 Agent<span class="ver">防幻觉不是叮嘱模型，是代码层硬约束——这一页让你亲眼看到、亲手验证</span></h1>
+        <p class="hero-sub">首屏即工具：直接提问，看 BM25 全量打分、阈值过滤、代码级拒答与字符级证据锚点。打开右上「坏模型」开关，把模型换成永远编造的坏模型，约束依然成立。</p>
+      </div>
+      <label class="switch-wrap" for="bad-model" title="注入一个永远编造的坏模型：阈值 / 拒答 / 白名单 / 引用强制照常执行">
+        <span class="switch"><input type="checkbox" id="bad-model" onchange="onBadToggle()"><i></i></span>
+        <span class="switch-text"><b>模拟坏模型（永远编造）</b><small>阈值 / 拒答 / 白名单照常执行</small></span>
+      </label>
+    </div>
+    <nav class="pipeline" aria-label="学习闭环管线（点击跳转对应区块）">
+      <button class="pnode" onclick="gotoSec('mem-strip')">load_memory</button><span class="parrow">→</span>
+      <button class="pnode" onclick="gotoSec('sec-profile')">profile</button><span class="parrow">→</span>
+      <button class="pnode" onclick="gotoSec('sec-plan')">planner</button><span class="parrow">→</span>
+      <button class="pnode" onclick="gotoSec('sec-res')">resource</button><span class="parrow">→</span>
+      <button class="pnode" onclick="gotoSec('sec-quiz')">quiz</button><span class="parrow">→</span>
+      <button class="pnode" onclick="gotoSec('sec-review')">review</button><span class="parrow">→ 条件边 →</span>
+      <button class="pnode agent" onclick="gotoSec('sec-tutor')">tutor（ReAct ≤4轮）</button><span class="parrow">→</span>
+      <button class="pnode" onclick="gotoSec('mem-strip')">save_memory</button>
+    </nav>
+  </div>
+</div>
+
 <div class="wrap">
-<header class="hero">
-  <span class="badge">2026 Qoder 高校创造力大赛 · StudyHack 学习科研赛道</span>
-  <span class="badge">主参赛作品 · 公网演示版</span>
-  <h1>学习闭环 Agent</h1>
-  <p class="sub">我把「画像 → 规划 → 检索问答 → 测验 → 复盘 → 自主辅导」串成一条可审计的学习闭环。防幻觉不是叮嘱模型，而是代码层的三道硬约束——这一页让你亲眼看到它们工作。</p>
-  <div class="graph" aria-label="本地完整版 LangGraph 状态图">
-    <span class="gnode">load_memory</span><span class="garrow">→</span>
-    <span class="gnode">profile</span><span class="garrow">→</span>
-    <span class="gnode">planner</span><span class="garrow">→</span>
-    <span class="gnode">resource</span><span class="garrow">→</span>
-    <span class="gnode">quiz</span><span class="garrow">→</span>
-    <span class="gnode">review</span><span class="garrow">→ 条件边 →</span>
-    <span class="gnode agent">tutor（ReAct ≤4轮）</span><span class="garrow">→</span>
-    <span class="gnode">save_memory</span>
-  </div>
-</header>
-
-<div class="tip"><b>公网版说明：</b>这是无状态演示——学情只存在你浏览器的 localStorage 里，随请求传入、服务端不落库；检索/阈值/拒答/白名单/规划/题库/辅导规则与本地完整版<b>同源同参数</b>（BM25 bigram 分词、阈值 2.0、top-k 4、ReAct 4 轮上限）。完整的 LangGraph 8 节点编排、SQLite 跨会话记忆与真实 LLM 调用在本地完整版；本页无模型 Key，全部走规则兜底，绝不编造。</div>
-<div class="statusline" id="mem-state"></div>
-<button class="ghost" onclick="resetLocal()">清空我的本地学情</button>
-
-<div class="card">
-  <h2><span class="stepno">1</span>学习画像</h2>
-  <p class="desc">告诉我你是谁、想学什么。姓名/专业由与后端同源的正则从你的自我介绍里提取（高置信覆盖），六维画像由表单规则生成。</p>
-  <label>自我介绍（试试「我叫李华，我是软件工程专业」）</label>
-  <textarea id="f-intro" placeholder="我叫……，……专业，平时喜欢……"></textarea>
-  <div class="row">
-    <div><label>知识基础</label><select id="f-base"><option value="beginner">零基础</option><option value="intermediate" selected>能写简单脚本</option><option value="advanced">能做中小项目</option></select></div>
-    <div><label>认知风格</label><select id="f-style"><option>逻辑型</option><option>视觉型</option><option>动手型</option></select></div>
-    <div><label>资源偏好</label><select id="f-pref"><option>图文</option><option>视频</option><option>项目驱动</option></select></div>
-    <div><label>每周学习时间（小时）</label><input id="f-hours" type="number" min="0" max="80" value="10"></div>
-  </div>
-  <label>学习目标</label>
-  <input id="f-goal" placeholder="例如：独立交付一个 AI Agent 项目">
-  <label>薄弱点（用顿号分隔）</label>
-  <input id="f-weak" placeholder="例如：算法与数据结构、工程化部署">
-  <button onclick="doProfile()">生成画像</button>
-  <span class="small" id="profile-msg"></span>
-  <div id="profile-out"></div>
+<div id="mem-strip">
+  <span class="statusline" id="mem-state"></span>
+  <button class="ghost" onclick="resetLocal()">清空我的本地学情</button>
 </div>
 
-<div class="card">
-  <h2><span class="stepno">2</span>学习规划 + 资源推荐（防幻觉三道闸）</h2>
-  <p class="desc">规则版规划与本地零 Key 样例同源；资源推荐走真实链路：按步骤标题 BM25 检索（阈值 2.0）→ 空检索代码级拒答 → URL 白名单逐条过滤。</p>
-  <button onclick="doPlan()" id="btn-plan">生成学习计划</button>
-  <button class="ghost" onclick="doResources()" id="btn-res" disabled>按计划推荐资源</button>
-  <label class="check"><input type="checkbox" id="inject-fake"> 注入一条编造链接，看白名单当场拦下它</label>
-  <div id="plan-out"></div>
-  <div id="res-out"></div>
-</div>
-
-<div class="card">
-  <h2><span class="stepno">3</span>知识库检索问答（防幻觉可见化）</h2>
-  <p class="desc">我把 12 条课程知识库全量打分给你看：只有 BM25 分 &gt; 2.0 的才进候选；一条都没有时我在代码层直接拒答，根本不调用模型。</p>
+<section class="card" id="sec-ask">
+  <h2><span class="stepno">1</span>知识库检索问答 <span class="pill info">防幻觉第①②道闸可见化</span><span class="pill info">证据锚点 [n]</span></h2>
+  <p class="desc">12 条课程知识库全量打分：只有 BM25 分 &gt; 2.0 才进候选；一条都没有时代码层直接拒答、根本不调模型。答案与命中条目带 [n] 编号——点击跳回语料原文，命中片段按字符区间高亮。</p>
   <div class="chips">
     <span class="chip" onclick="askSample('学习 LangGraph')">学习 LangGraph</span>
     <span class="chip" onclick="askSample('怎么用 Docker 部署 Python 应用')">怎么用 Docker 部署 Python 应用</span>
@@ -130,39 +174,91 @@
     <span class="chip" onclick="askSample('我想学点编程')">零命中话题（看拒答）</span>
   </div>
   <div class="row">
-    <div style="flex:3"><input id="ask-q" placeholder="输入问题，例如：FastAPI 怎么做请求校验"></div>
-    <div style="flex:0"><button onclick="doAsk()">检索问答</button></div>
+    <div style="flex:3"><input id="ask-q" placeholder="输入问题，例如：FastAPI 怎么做请求校验" onkeydown="if(event.key==='Enter')doAsk()"></div>
+    <div style="flex:0"><button onclick="doAsk()" style="margin-top:10px">检索问答</button></div>
   </div>
   <div id="ask-out"></div>
-</div>
+</section>
 
-<div class="card">
-  <h2><span class="stepno">4</span>自测测验</h2>
+<details class="tip-d">
+  <summary><b>公网版说明</b>（无状态演示 · 与本地完整版同源同参数 · 点击展开）</summary>
+  <p style="margin:8px 0 4px">学情只存在你浏览器的 localStorage 里，随请求传入、服务端不落库；检索/阈值/拒答/白名单/规划/题库/辅导规则与本地完整版<b>同源同参数</b>（BM25 bigram 分词、阈值 2.0、top-k 4、ReAct 4 轮上限）。完整的 LangGraph 8 节点编排、SQLite 跨会话记忆与真实 LLM 调用在本地完整版；本页无模型 Key，全部走规则兜底，绝不编造。「模拟坏模型」开关注入的是一个故意永远编造的演示模型，用来证明约束不依赖模型自觉。</p>
+</details>
+
+<details class="card drawer" id="sec-profile">
+  <summary><span class="stepno">2</span>学习画像<span class="small" style="font-weight:400">（表单默认收起，点击展开）</span><span id="profile-flag"></span></summary>
+  <div class="drawer-body">
+    <p class="desc">告诉我你是谁、想学什么。姓名/专业由与后端同源的正则从你的自我介绍里提取（高置信覆盖），六维画像由表单规则生成。</p>
+    <label>自我介绍（试试「我叫李华，我是软件工程专业」）</label>
+    <textarea id="f-intro" placeholder="我叫……，……专业，平时喜欢……"></textarea>
+    <div class="row">
+      <div><label>知识基础</label><select id="f-base"><option value="beginner">零基础</option><option value="intermediate" selected>能写简单脚本</option><option value="advanced">能做中小项目</option></select></div>
+      <div><label>认知风格</label><select id="f-style"><option>逻辑型</option><option>视觉型</option><option>动手型</option></select></div>
+      <div><label>资源偏好</label><select id="f-pref"><option>图文</option><option>视频</option><option>项目驱动</option></select></div>
+      <div><label>每周学习时间（小时）</label><input id="f-hours" type="number" min="0" max="80" value="10"></div>
+    </div>
+    <label>学习目标</label>
+    <input id="f-goal" placeholder="例如：独立交付一个 AI Agent 项目">
+    <label>薄弱点（用顿号分隔）</label>
+    <input id="f-weak" placeholder="例如：算法与数据结构、工程化部署">
+    <button onclick="doProfile()">生成画像</button>
+    <span class="small" id="profile-msg"></span>
+    <div id="profile-out"></div>
+  </div>
+</details>
+
+<section class="card" id="sec-plan">
+  <h2><span class="stepno">3</span>学习规划</h2>
+  <p class="desc">规则版规划与本地零 Key 样例同源：五步路径，从基础巩固到部署上线。</p>
+  <button onclick="doPlan()" id="btn-plan">生成学习计划</button>
+  <div id="plan-out"></div>
+</section>
+
+<section class="card" id="sec-res">
+  <h2><span class="stepno">4</span>资源推荐 <span class="pill info">防幻觉第③道闸：URL 白名单</span></h2>
+  <p class="desc">按步骤标题 BM25 检索（阈值 2.0）→ 空检索代码级拒答 → URL 白名单逐条过滤。放行条目带 [n] 证据编号，点击看语料原文；被拦条目当场示众。</p>
+  <button onclick="doResources()" id="btn-res" disabled>按计划推荐资源</button>
+  <label class="check"><input type="checkbox" id="inject-fake"> 注入一条编造链接，看白名单当场拦下它</label>
+  <div class="badnote" id="bad-hint-res" hidden>坏模型开关已打开：本次推荐将由「永远编造」的坏模型出候选，白名单照常逐条审计。</div>
+  <div id="res-out"></div>
+</section>
+
+<section class="card" id="sec-quiz">
+  <h2><span class="stepno">5</span>自测测验</h2>
   <p class="desc">种子题库与本地零 Key 样例逐字同源，覆盖本轮计划的三个核心知识点。</p>
   <div id="quiz-out"></div>
   <button onclick="doGrade()" id="btn-grade" disabled>交卷批改</button>
   <div id="grade-out"></div>
-</div>
+</section>
 
-<div class="card">
-  <h2><span class="stepno">5</span>学情复盘（上次 vs 本次）</h2>
+<section class="card" id="sec-review">
+  <h2><span class="stepno">6</span>学情复盘（上次 vs 本次）</h2>
   <p class="desc">复盘规则结合画像与测验结果；如果你上次来过（localStorage 里有学情快照），我会给出纵向对比——没有历史就明说首次，不编造「上次」。</p>
   <button onclick="doReview()" id="btn-review" disabled>生成复盘</button>
   <div id="review-out"></div>
-</div>
+</section>
 
-<div class="card">
-  <h2><span class="stepno">6</span>自主辅导节点（ReAct 演示）</h2>
-  <p class="desc">这是本地完整版里唯一的自主决策节点：决策 → 调工具 → 观察 → 再决策，最多 4 轮，每轮记入 trace 可审计。公网无 Key 走与后端同构的规则策略（工具真实执行 BM25 检索）；配置了可用 Key 才走模型驱动。</p>
+<section class="card" id="sec-tutor">
+  <h2><span class="stepno">7</span>自主辅导节点（ReAct 演示）</h2>
+  <p class="desc">本地完整版里唯一的自主决策节点：决策 → 调工具 → 观察 → 再决策，最多 4 轮，每轮记入 trace 可审计。公网无 Key 走与后端同构的规则策略（工具真实执行 BM25 检索）；配置了可用 Key 才走模型驱动。</p>
   <button onclick="doTutor()" id="btn-tutor" disabled>运行 ReAct 辅导</button>
   <div id="tutor-out"></div>
-</div>
+</section>
 
 <footer>
-  学习闭环 Agent · python-learning-agent 公网演示版 · FastAPI + LangGraph 多智能体系统的同源规则子集 ·
-  检索参数与拒答判据与后端 156 项离线测试同口径 · 本页不收集任何个人信息，学情仅存于你的浏览器。
+  学习闭环 Agent · python-learning-agent 公网演示版 v1.1 · FastAPI + LangGraph 多智能体系统的同源规则子集 ·
+  检索参数与拒答判据与后端 163 项 pytest + 46 项 node 对拍测试同口径 · 本页不收集任何个人信息，学情仅存于你的浏览器。
 </footer>
 </div>
+
+<div id="ev-backdrop" onclick="closeEvidence()"></div>
+<aside id="ev-panel" aria-hidden="true" aria-label="证据原文侧栏">
+  <div class="ev-head"><span class="pill info" id="ev-no">[1]</span><b id="ev-title"></b><button class="ev-close" onclick="closeEvidence()" aria-label="关闭">✕</button></div>
+  <div class="ev-meta" id="ev-meta"></div>
+  <a id="ev-url" target="_blank" rel="noopener"></a>
+  <div class="ev-body" id="ev-body"></div>
+  <div class="ev-foot" id="ev-foot"></div>
+</aside>
 
 <script>
 const API='/functions/v1/app/';
@@ -175,6 +271,7 @@ let profile=load('la_profile',null);
 let prevSnapshot=load('la_snapshot',null);
 let historyCount=load('la_history',0);
 let plan=null,quiz=null,quizResult=null,review=null;
+const evStore={ask:[],res:[]};   // 证据锚点数据源：当前回答命中 / 当前放行资源
 
 function memState(){
  el('mem-state').textContent=prevSnapshot
@@ -184,20 +281,125 @@ function memState(){
 function resetLocal(){
  localStorage.removeItem('la_profile');localStorage.removeItem('la_snapshot');localStorage.removeItem('la_history');
  profile=null;prevSnapshot=null;historyCount=0;quizResult=null;review=null;
- el('profile-out').innerHTML='';el('review-out').innerHTML='';el('tutor-out').innerHTML='';el('grade-out').innerHTML='';
+ el('profile-out').innerHTML='';el('profile-flag').innerHTML='';el('review-out').innerHTML='';el('tutor-out').innerHTML='';el('grade-out').innerHTML='';
  el('btn-review').disabled=true;el('btn-tutor').disabled=true;
  memState();
 }
 async function post(t,b){const r=await fetch(API+t,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b||{})});const j=await r.json();if(!j.ok)throw new Error(j.error||'请求失败');return j}
 async function get(t){const r=await fetch(API+t);const j=await r.json();if(!j.ok)throw new Error(j.error||'请求失败');return j}
 function showErr(box,e){box.innerHTML='<span class="err">'+esc(e.message)+'</span>'}
+const badOn=()=>el('bad-model').checked;
+function onBadToggle(){
+ document.body.classList.toggle('bad-on',badOn());
+ el('bad-hint-res').hidden=!badOn();
+}
+function gotoSec(id){
+ const node=el(id);
+ if(id==='sec-profile')node.open=true;
+ node.scrollIntoView({behavior:'smooth',block:'start'});
+ node.classList.remove('flash');void node.offsetWidth;node.classList.add('flash');
+}
 
-/* ---- 1 画像 ---- */
+/* ---- 证据锚点：字符区间高亮 + 侧栏 ---- */
+function marksHtml(content,marks,from,to){
+ let html='',pos=from;
+ for(const m of marks||[]){
+  const s=Math.max(m.start,from),e=Math.min(m.end,to);
+  if(e<=s||s<pos)continue;
+  html+=esc(content.slice(pos,s))+'<mark>'+esc(content.slice(s,e))+'</mark>';
+  pos=e;
+ }
+ return html+esc(content.slice(pos,to));
+}
+function excerptHtml(h){
+ const{start,end}=h.offset;
+ return (start>0?'…':'')+marksHtml(h.content,h.marks,start,end)+(end<h.content.length?'…':'');
+}
+function cites(text,len,kind){
+ return esc(text).replace(/\[(\d+)\]/g,(m,n)=>{
+  const i=Number(n);
+  return (i>=1&&i<=len)?`<button class="cite" onclick="openEvidence('${kind}',${i-1})" title="查看证据 [${i}] 的语料原文">[${i}]</button>`:m;
+ });
+}
+function openEvidence(kind,i){
+ const d=evStore[kind][i];if(!d)return;
+ el('ev-no').textContent=`[${i+1}]`;
+ el('ev-title').textContent=d.title;
+ el('ev-meta').innerHTML=`<span class="pill info">${esc(d.type||'doc')}</span>${typeof d.score==='number'?`<span class="pill ok">BM25 ${d.score.toFixed(4)}</span>`:''}<span class="pill ok">白名单内 · 可溯源</span>`;
+ el('ev-url').href=d.url;el('ev-url').textContent=d.url;
+ el('ev-body').innerHTML=marksHtml(d.content,d.marks,0,d.content.length);
+ el('ev-foot').textContent=`证据窗口：字符 ${d.offset.start}–${d.offset.end} / 全文 ${d.content.length}；高亮 ${(d.marks||[]).length} 处命中 bigram。原文逐字来自课程知识库，未做任何改写。`;
+ el('ev-panel').classList.add('show');el('ev-panel').setAttribute('aria-hidden','false');
+ el('ev-backdrop').classList.add('show');
+ const first=el('ev-body').querySelector('mark');
+ if(first)first.scrollIntoView({block:'center'});
+}
+function closeEvidence(){
+ el('ev-panel').classList.remove('show');el('ev-panel').setAttribute('aria-hidden','true');
+ el('ev-backdrop').classList.remove('show');
+}
+document.addEventListener('keydown',e=>{if(e.key==='Escape')closeEvidence()});
+
+/* ---- 分数表（条带动画） ---- */
+function scoreTable(j){
+ const max=Math.max(...j.scores.map(s=>s.score),0.0001);
+ return `<table><tr><th>资料（全量 ${j.scores.length} 条打分）</th><th>BM25 分</th><th></th><th>阈值 ${j.threshold} 判定</th></tr>
+  ${j.scores.map(s=>{const pass=s.score>j.threshold;return `<tr><td>${esc(s.title)}</td><td>${s.score.toFixed(4)}</td><td><div class="bar"><i class="${pass?'pass':''}" data-w="${Math.max(2,Math.round(s.score/max*100))}"></i></div></td><td>${pass?'<span class="pill ok">进入候选</span>':'<span class="pill bad">过滤</span>'}</td></tr>`}).join('')}</table>`;
+}
+function animateBars(box){
+ requestAnimationFrame(()=>requestAnimationFrame(()=>{
+  box.querySelectorAll('.bar i[data-w]').forEach(b=>{b.style.width=b.dataset.w+'%'});
+ }));
+}
+function hitsHtml(hits,kind){
+ return hits.map((h,i)=>`<div class="hit" onclick="openEvidence('${kind}',${i})" title="点击查看语料原文与命中高亮">
+  <button class="cite" onclick="event.stopPropagation();openEvidence('${kind}',${i})">[${i+1}]</button>
+  <b>${esc(h.title)}</b> ${typeof h.score==='number'?`<span class="pill ok">score ${h.score.toFixed(4)}</span>`:''}
+  <a href="${esc(h.url)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">${esc(h.url)}</a>
+  <div class="excerpt">${excerptHtml(h)}</div></div>`).join('');
+}
+
+/* ---- 1 检索问答 ---- */
+function askSample(q){el('ask-q').value=q;doAsk()}
+async function doAsk(){
+ const box=el('ask-out');const q=el('ask-q').value.trim();
+ if(!q){box.innerHTML='<span class="err">先输入一个问题</span>';return}
+ box.innerHTML='<span class="small">检索中…</span>';
+ try{
+  const j=await post('ask',{query:q,simulateBadModel:badOn()});
+  evStore.ask=j.hits;
+  const table=scoreTable(j);
+  if(j.refused){
+   box.innerHTML=`<div class="refuse"><b>我拒答了：</b>${esc(j.reason)}<br><span class="pill bad">refused: true</span><span class="pill bad">modelCalled: false</span>${j.simulateBadModel?'<span class="pill bad">坏模型同样一次都没被调用</span>':''}<div style="margin-top:6px">${esc(j.answer)}</div></div>${table}`;
+  }else if(j.mode==='bad-model'){
+   const blockedTexts=new Set(j.blockedItems.map(b=>b.text));
+   const rawLines=j.rawAnswer.split('\n').filter(l=>l.trim()).map(l=>{
+    const bad=blockedTexts.has(l);
+    const item=j.blockedItems.find(b=>b.text===l);
+    return `<div class="rawline ${bad?'badline':'goodline'}">${esc(l)}${bad?`<br><span class="pill bad" style="text-decoration:none">${esc(item.reason)}</span>`:' <span class="pill ok" style="text-decoration:none">放行</span>'}</div>`;
+   }).join('');
+   box.innerHTML=`<div class="kv"><span class="pill bad">mode: bad-model</span><span class="pill warn">modelCalled: true（坏模型被真实调用）</span><span class="pill bad">拦截 ${j.blocked} 条</span><span class="pill ok">命中 ${j.hits.length} 条（top-k=${j.k}，分数 &gt; ${j.threshold}）</span></div>
+    <div class="refuse"><b>对照结论：</b>${esc(j.reason)}</div>
+    <div class="rawbox"><b>坏模型原始输出（审计前，逐行示众）：</b>${rawLines}</div>
+    <div class="answer"><b>引用强制闸过滤后（仅放行可溯源条目）：</b>\n${cites(j.answer,j.hits.length,'ask')}</div>
+    <div class="blockedbox"><b>被拦条目（${j.blocked}）：</b>${j.blockedItems.map(b=>`<div class="blocked-item">${esc(b.text)}<br><span class="pill bad">${esc(b.reason)}</span>${b.urls.map(u=>`<span class="u">${esc(u)}</span>`).join(' ')}</div>`).join('')}</div>
+    ${hitsHtml(j.hits,'ask')}${table}`;
+  }else{
+   box.innerHTML=`<div class="kv"><span class="pill ok">命中 ${j.hits.length} 条（top-k=${j.k}，分数 &gt; ${j.threshold}）</span><span class="pill info">mode: ${esc(j.mode)}</span><span class="pill info">modelCalled: ${j.modelCalled}</span><span class="pill info">点击 [n] 查看原文证据</span></div>
+    <div class="answer">${cites(j.answer,j.hits.length,'ask')}</div>
+    ${hitsHtml(j.hits,'ask')}${table}`;
+  }
+  animateBars(box);
+ }catch(e){showErr(box,e)}
+}
+
+/* ---- 2 画像 ---- */
 function renderProfile(p){
  const dims=[['知识基础',p.knowledgeBase],['学习目标',p.learningGoal],['认知风格',p.cognitiveStyle],['薄弱点',p.weakPoints],['资源偏好',p.resourcePreference],['学习时间',p.studyTime]];
  el('profile-out').innerHTML=
   `<div class="kv"><b>${esc(p.summary)}</b>${p.name?` <span class="pill info">姓名：${esc(p.name)}</span>`:''}${p.major?` <span class="pill info">专业：${esc(p.major)}</span>`:''}</div>
    <div class="dims">${dims.map(([n,d])=>`<div class="dim"><b>${n} <span class="pill info">${esc(d.level)}</span></b>${esc(d.details)}</div>`).join('')}</div>`;
+ el('profile-flag').innerHTML=`<span class="pill ok">已生成${p.name?'：'+esc(p.name):''}${p.major?' · '+esc(p.major):''}</span>`;
 }
 async function doProfile(){
  const box=el('profile-out');
@@ -208,7 +410,7 @@ async function doProfile(){
  }catch(e){showErr(box,e)}
 }
 
-/* ---- 2 规划 + 资源 ---- */
+/* ---- 3 规划 ---- */
 async function doPlan(){
  const box=el('plan-out');
  try{
@@ -219,44 +421,33 @@ async function doPlan(){
   el('btn-res').disabled=false;
  }catch(e){showErr(box,e)}
 }
+
+/* ---- 4 资源推荐 ---- */
 async function doResources(){
  const box=el('res-out');
  try{
-  const body={steps:plan.steps.map(s=>s.title)};
+  const body={steps:plan.steps.map(s=>s.title),simulateBadModel:badOn()};
   if(el('inject-fake').checked)body.candidateItems=[{title:'史上最强三天速成课',url:'https://definitely-not-in-corpus.example.com/awesome-course',type:'video',description:'我故意编造的条目'}];
   const j=await post('resources',body);
-  if(j.refused){box.innerHTML=`<div class="refuse"><b>代码级拒答：</b>${esc(j.reason)}<br><span class="pill bad">modelCalled: false</span></div>`;return}
+  if(j.refused){box.innerHTML=`<div class="refuse"><b>代码级拒答：</b>${esc(j.reason)}<br><span class="pill bad">modelCalled: false</span>${j.simulateBadModel?'<span class="pill bad">坏模型同样一次都没被调用</span>':''}</div>`;return}
+  evStore.res=j.resources;
+  const blockedBox=j.blocked?`<div class="blockedbox"><b>被拦条目（${j.blocked}，当场示众）：</b>${j.blockedItems.map(b=>`<div class="blocked-item"><b>${esc(b.title||'（无标题）')}</b><br><span class="u">${esc(b.url||'（无 URL）')}</span><br><span class="pill bad">${esc(b.reason)}</span></div>`).join('')}</div>`:'';
   box.innerHTML=`<div class="kv"><span class="pill ok">白名单候选 ${j.whitelist.length} 条</span>
    ${j.blocked?`<span class="pill bad">拦下编造条目 ${j.blocked} 条</span>`:'<span class="pill ok">无编造条目</span>'}
-   <span class="pill info">modelCalled: ${j.modelCalled}</span></div>
+   <span class="pill info">modelCalled: ${j.modelCalled}</span>${j.mode==='bad-model'?'<span class="pill bad">mode: bad-model（坏模型被真实调用，输出仍被过滤）</span>':''}</div>
    ${j.reason?`<div class="refuse">${esc(j.reason)}</div>`:''}
-   ${j.resources.map(r=>`<div class="hit"><b>[${esc(r.type)}] ${esc(r.title)}</b><br><a href="${esc(r.url)}" target="_blank" rel="noopener">${esc(r.url)}</a><div class="small">${esc(r.description||'')} ${esc(r.relevance||'')}</div></div>`).join('')}
+   ${j.resources.map((r,i)=>`<div class="hit" onclick="openEvidence('res',${i})" title="点击查看语料原文与命中高亮">
+    <button class="cite" onclick="event.stopPropagation();openEvidence('res',${i})">[${i+1}]</button>
+    <b>[${esc(r.type)}] ${esc(r.title)}</b>
+    <a href="${esc(r.url)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">${esc(r.url)}</a>
+    <div class="small">${esc(r.description||'')} ${esc(r.relevance||'')}</div>
+    ${r.excerpt?`<div class="excerpt">${excerptHtml(r)}</div>`:''}</div>`).join('')}
+   ${blockedBox}
    <div class="small">本轮白名单（URL 精确匹配 + 标题归一化）：${j.whitelist.map(w=>esc(w.title)).join('、')}</div>`;
  }catch(e){showErr(box,e)}
 }
 
-/* ---- 3 检索问答 ---- */
-function askSample(q){el('ask-q').value=q;doAsk()}
-async function doAsk(){
- const box=el('ask-out');const q=el('ask-q').value.trim();
- if(!q){box.innerHTML='<span class="err">先输入一个问题</span>';return}
- box.innerHTML='<span class="small">检索中…</span>';
- try{
-  const j=await post('ask',{query:q});
-  const max=Math.max(...j.scores.map(s=>s.score),0.0001);
-  const table=`<table><tr><th>资料（全量 ${j.scores.length} 条打分）</th><th>BM25 分</th><th></th><th>阈值 ${j.threshold} 判定</th></tr>
-   ${j.scores.map(s=>{const pass=s.score>j.threshold;return `<tr><td>${esc(s.title)}</td><td>${s.score.toFixed(4)}</td><td><div class="bar"><i class="${pass?'pass':''}" style="width:${Math.max(2,Math.round(s.score/max*100))}%"></i></div></td><td>${pass?'<span class="pill ok">进入候选</span>':'<span class="pill bad">过滤</span>'}</td></tr>`}).join('')}</table>`;
-  if(j.refused){
-   box.innerHTML=`<div class="refuse"><b>我拒答了：</b>${esc(j.reason)}<br><span class="pill bad">refused: true</span><span class="pill bad">modelCalled: false</span><div style="margin-top:6px">${esc(j.answer)}</div></div>${table}`;
-  }else{
-   box.innerHTML=`<div class="kv"><span class="pill ok">命中 ${j.hits.length} 条（top-k=${j.k}，分数 &gt; ${j.threshold}）</span><span class="pill info">mode: ${esc(j.mode)}</span><span class="pill info">modelCalled: ${j.modelCalled}</span></div>
-    <div class="answer">${esc(j.answer)}</div>
-    ${j.hits.map(h=>`<div class="hit"><b>${esc(h.title)}</b> <span class="pill ok">score ${h.score.toFixed(4)}</span><br><a href="${esc(h.url)}" target="_blank" rel="noopener">${esc(h.url)}</a></div>`).join('')}${table}`;
-  }
- }catch(e){showErr(box,e)}
-}
-
-/* ---- 4 测验 ---- */
+/* ---- 5 测验 ---- */
 const QUIZ_TOPICS=['LangGraph 状态图编排','RAG 防幻觉机制','FastAPI 请求校验'];
 function renderQuiz(){
  el('quiz-out').innerHTML=quiz.questions.map((q,i)=>`<div class="q"><b>${i+1}. ${esc(q.q)}</b>
@@ -277,7 +468,7 @@ async function doGrade(){
  }catch(e){showErr(box,e)}
 }
 
-/* ---- 5 复盘 ---- */
+/* ---- 6 复盘 ---- */
 async function doReview(){
  const box=el('review-out');
  try{
@@ -288,14 +479,13 @@ async function doReview(){
    <div class="kv">薄弱项：${review.gaps.map(s=>`<span class="pill warn">${esc(s)}</span>`).join('')}</div>
    <div class="kv">下一步：${review.suggestions.map(s=>`<span class="pill info">${esc(s)}</span>`).join('')}</div>
    ${review.comparison?`<div class="cmp"><b>上次 vs 本次：</b>${esc(review.comparison)}</div>`:'<div class="small">首次学习，无历史学情——comparison 为空，我不编造「上次」。</div>'}`;
-  // 记忆写入浏览器（公网版无状态：服务端不落库）；prevSnapshot 滚动为「上一轮」，供下次对比
   save('la_snapshot',j.snapshot);historyCount+=1;save('la_history',historyCount);
   prevSnapshot=j.snapshot;
   el('btn-tutor').disabled=false;memState();
  }catch(e){showErr(box,e)}
 }
 
-/* ---- 6 ReAct 辅导 ---- */
+/* ---- 7 ReAct 辅导 ---- */
 async function doTutor(){
  const box=el('tutor-out');
  box.innerHTML='<span class="small">自主循环运行中…</span>';
