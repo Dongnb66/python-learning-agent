@@ -8,6 +8,9 @@
 //（注入永远编造的演示模型，阈值/拒答/白名单/引用强制照常执行，blockedItems 逐条示众）。
 // v1.2：Tangle 式反应式参数——ask/resources 可选 params 覆盖 {k1,b,eps,threshold,k}，
 // 严格边界校验（越界 400）；不传 = 生产参数，与本地完整版对拍口径不变。
+// v1.2.1：未接来电台账（拒答=未接来电，回拨=补证据重答）——ask/resources 可选 extraDocs
+//（≤5 条本地演示语料 {title,url,content≤2000字}，严格校验越界 400）并入本轮检索；
+// 不传 extraDocs = 生产语料与参数，对拍口径逐字不变。
 import { SEED, CORPUS_SOURCE, RESOURCE_RELEVANCE } from './seed.mjs';
 import { buildRetriever, retrieve, allScores, tokenize } from './bm25.mjs';
 
@@ -15,7 +18,7 @@ const MAX_BODY = 100_000;
 const MIN_SCORE = 2.0;   // app/rag.py retrieve() 默认阈值
 const K = 4;             // app/rag.py retrieve() 默认 k
 const MAX_ROUNDS = 4;    // app/agents/tutor_agent.py MAX_ROUNDS
-const VERSION = 'learning-agent-playground-1.2.0';
+const VERSION = 'learning-agent-playground-1.2.1';
 
 const RETRIEVER = buildRetriever(SEED.corpus);
 
@@ -58,6 +61,43 @@ function retrieverFor(p) {
 
 const json = (status, body) => Response.json(body, { status, headers: { 'cache-control': 'no-store' } });
 const fail = (msg) => json(400, { ok: false, error: msg });
+
+/* ---- extraDocs：回拨补充的本地演示语料（未接来电台账的「待补证据」） ----
+ * 可选 ≤5 条 {title,url,content}，严格校验：越界 / 非法类型 / 未知字段 / 重复 URL 一律 400。
+ * 并入策略（二选一取「按并入后重算」）：extraDocs 与生产语料合并后重建 BM25 索引，
+ * IDF / avgdl 按合并语料重算——补充语料是本轮检索的真实候选，不是旁路贴片；
+ * 索引仅本轮请求临时构建、不进缓存。不传 extraDocs 时走生产 RETRIEVER / 参数缓存，
+ * 分数与拒答判据与本地完整版对拍口径逐字不变。 */
+const EXTRA_MAX_DOCS = 5;
+const EXTRA_TITLE_MAX = 120;
+const EXTRA_URL_MAX = 300;
+const EXTRA_CONTENT_MAX = 2000;
+const EXTRA_URL_RE = /^https?:\/\/[^\s]+$/;
+export function resolveExtraDocs(input) {
+  if (input === undefined || input === null) return [];
+  if (!Array.isArray(input)) throw new Error('extraDocs 必须是数组');
+  if (input.length > EXTRA_MAX_DOCS) throw new Error(`extraDocs 最多 ${EXTRA_MAX_DOCS} 条`);
+  const seen = new Set(SEED.corpus.map((d) => d.url));
+  return input.map((d, i) => {
+    if (!d || typeof d !== 'object' || Array.isArray(d)) throw new Error(`extraDocs[${i}] 必须是对象`);
+    for (const key of Object.keys(d)) {
+      if (!['title', 'url', 'content'].includes(key)) throw new Error(`extraDocs[${i}] 含未知字段 ${key}（允许：title/url/content）`);
+    }
+    const title = str(d.title, `extraDocs[${i}].title`, EXTRA_TITLE_MAX);
+    const url = str(d.url, `extraDocs[${i}].url`, EXTRA_URL_MAX);
+    if (!EXTRA_URL_RE.test(url)) throw new Error(`extraDocs[${i}].url 必须是 http(s) 链接且不含空白`);
+    const content = str(d.content, `extraDocs[${i}].content`, EXTRA_CONTENT_MAX);
+    if (seen.has(url)) throw new Error(`extraDocs[${i}].url 与生产语料或本批其他条目重复`);
+    seen.add(url);
+    return { title, url, content, type: 'local' };
+  });
+}
+/* 并入 extraDocs 的临时检索器：IDF/avgdl 按合并后语料重算（含 Tangle 实验参数）；
+ * 无 extraDocs 时原样返回生产/实验参数检索器，保证默认对拍不变。 */
+function retrieverWithExtras(p, extra) {
+  if (!extra.length) return retrieverFor(p);
+  return buildRetriever([...SEED.corpus, ...extra], { k1: p.k1, b: p.b, epsilon: p.eps });
+}
 
 function str(v, name, max = 300) {
   if (typeof v !== 'string' || !v.trim()) throw new Error(`${name} 必填`);
@@ -221,20 +261,26 @@ function badResourceModel(context, allowed) {
 /* ---- 检索问答：BM25 + 阈值过滤 + 空检索代码级拒答（防幻觉第①②道） ---- */
 export function answerQuery(query, opts = {}) {
   const p = resolveParams(opts.params);
-  const retriever = retrieverFor(p);
+  const extra = resolveExtraDocs(opts.extraDocs);
+  const retriever = retrieverWithExtras(p, extra);
+  const extraUrls = new Set(extra.map((d) => d.url));
   const bad = opts.simulateBadModel === true;
   // 注入点：等价于 pytest 里 patch get_structured_model；bad 模式注入「永远编造」的坏模型
   const callModel = opts.callModel || (bad ? badAskModel : null);
   const scores = allScores(retriever, query);
-  const hits = withEvidence(retrieve(retriever, query, p.k, p.threshold), query);
+  // 命中来自 extraDocs 的条目标 local:true（UI 打「本地补充语料（演示）」徽章）；无 extraDocs 时原样透传
+  const hits = withEvidence(retrieve(retriever, query, p.k, p.threshold), query)
+    .map((h) => (extraUrls.has(h.url) ? { ...h, local: true } : h));
   const maxScore = scores.length ? scores[0].score : 0;
+  const extraNote = extra.length ? { extraDocsUsed: extra.length } : {};
   if (!hits.length) {
     // 第②道守卫：无事实依据 → 直接拒答，根本不调用模型（机制，不是期望；坏模型同样不被调用）
     return {
       ok: true, query, threshold: p.threshold, k: p.k, params: p, refused: true, modelCalled: false, mode: 'refused',
-      reason: `资料库中无相关内容：全部 ${scores.length} 条候选的 BM25 分均 ≤ 阈值 ${p.threshold}（最高 ${maxScore.toFixed(4)}）。代码级拒答，未调用模型。`,
+      reason: `资料库中无相关内容：全部 ${scores.length} 条候选的 BM25 分均 ≤ 阈值 ${p.threshold}（最高 ${maxScore.toFixed(4)}）。代码级拒答，未调用模型。` +
+        (extra.length ? `本轮已并入 ${extra.length} 条本地补充语料（IDF/avgdl 按并入后重算），仍未过阈值。` : ''),
       answer: '资料库里确实没有这个主题的内容，我拒绝编造答案。建议换用资料库覆盖的话题（Python / FastAPI / LangGraph / RAG / Docker / 算法 / 网络 / SQL / 机器学习），或在本地完整版中扩充知识库。',
-      hits: [], scores, simulateBadModel: bad,
+      hits: [], scores, simulateBadModel: bad, ...extraNote,
     };
   }
   // 无 Key 规则兜底：答案只由检索命中的真实正文拼成，逐条附 [n] 编号出处（证据锚点）
@@ -252,7 +298,7 @@ export function answerQuery(query, opts = {}) {
     mode = modelCalled ? 'rule-fallback' : 'rules';
     answer = ruleAnswer;
   }
-  const base = { ok: true, query, threshold: p.threshold, k: p.k, params: p, refused: false, modelCalled, mode, reason: '', answer, hits, scores, simulateBadModel: bad };
+  const base = { ok: true, query, threshold: p.threshold, k: p.k, params: p, refused: false, modelCalled, mode, reason: '', answer, hits, scores, simulateBadModel: bad, ...extraNote };
   if (mode === 'bad-model') {
     // 第③道闸（引用强制）：坏模型照常返回编造内容，但输出逐行审计后才放行
     const rawAnswer = answer;
@@ -285,7 +331,12 @@ export function enforceWhitelist(items, allowed) {
 
 export function buildResources(input, opts = {}) {
   const p = resolveParams(opts.params);
-  const retriever = retrieverFor(p);
+  const extra = resolveExtraDocs(opts.extraDocs);
+  const retriever = retrieverWithExtras(p, extra);
+  // 白名单与证据原文查找都基于「生产语料 + extraDocs」：补充语料的 url 天然进入本轮白名单
+  const allDocs = extra.length ? [...SEED.corpus, ...extra] : SEED.corpus;
+  const extraUrls = new Set(extra.map((d) => d.url));
+  const extraNote = extra.length ? { extraDocsUsed: extra.length } : {};
   const bad = opts.simulateBadModel === true;
   const callModel = opts.callModel || (bad ? badResourceModel : null);
   const steps = Array.isArray(input?.steps) ? input.steps.slice(0, 8) : [];
@@ -307,7 +358,7 @@ export function buildResources(input, opts = {}) {
   const context = parts.join('\n\n');
   // 第②步：检索为空 → 代码级拒答，不调用模型（坏模型同样一次都不被调用）
   if (!context) {
-    return { ok: true, refused: true, modelCalled: false, mode: 'refused', resources: [], blocked: 0, blockedItems: [], whitelist: [], simulateBadModel: bad, params: p, reason: '计划步骤在资料库中均无相关命中（BM25 阈值过滤后为空），代码级拒答，未调用模型。' };
+    return { ok: true, refused: true, modelCalled: false, mode: 'refused', resources: [], blocked: 0, blockedItems: [], whitelist: [], simulateBadModel: bad, params: p, ...extraNote, reason: '计划步骤在资料库中均无相关命中（BM25 阈值过滤后为空），代码级拒答，未调用模型。' + (extra.length ? `本轮已并入 ${extra.length} 条本地补充语料，仍未过阈值。` : '') };
   }
   // 第③步：候选条目（有模型走模型；无 Key 用规则候选）→ 白名单过滤
   let items;
@@ -322,7 +373,7 @@ export function buildResources(input, opts = {}) {
     mode = 'injected';
   } else {
     items = Object.entries(allowed).slice(0, 4).map(([title, url]) => {
-      const doc = SEED.corpus.find((d) => d.title === title);
+      const doc = allDocs.find((d) => d.title === title);
       return { title, url, type: doc?.type || 'doc', description: (doc?.content || '').slice(0, 60) + '…', relevance: RESOURCE_RELEVANCE };
     });
   }
@@ -330,14 +381,14 @@ export function buildResources(input, opts = {}) {
   // 证据锚点：放行条目附上语料原文窗口与字符区间（按计划步骤词命中高亮）
   const stepQuery = steps.map((s) => optStr(s, 120)).filter(Boolean).join(' ');
   const resources = kept.map((r) => {
-    const doc = SEED.corpus.find((d) => d.url === r.url);
+    const doc = allDocs.find((d) => d.url === r.url);
     const content = doc ? `${doc.title}\n${doc.content}` : '';
-    return { ...r, content, ...annotateEvidence(content, stepQuery) };
+    return { ...r, ...(extraUrls.has(r.url) ? { local: true } : {}), content, ...annotateEvidence(content, stepQuery) };
   });
   return {
     ok: true, refused: false, modelCalled, mode, resources, blocked, blockedItems,
     whitelist: Object.entries(allowed).map(([title, url]) => ({ title, url })),
-    simulateBadModel: bad, params: p,
+    simulateBadModel: bad, params: p, ...extraNote,
     reason: blocked ? `白名单拦下 ${blocked} 条无法溯源的条目（URL 与标题均不在本轮检索候选内）。` : '',
   };
 }
@@ -564,7 +615,7 @@ export async function handleLearningAgent({ request, env }) {
   const tool = new URL(request.url).pathname.split('/').filter(Boolean).pop() ?? '';
   try {
     if (request.method === 'GET') {
-      if (tool === 'health') return json(200, { ok: true, version: VERSION, mode: 'rules', corpusSize: SEED.corpus.length, threshold: MIN_SCORE, k: K, maxRounds: MAX_ROUNDS, features: ['evidence-anchors', 'bad-model-simulation', 'reactive-params'], paramBounds: PARAM_BOUNDS, time: new Date().toISOString() });
+      if (tool === 'health') return json(200, { ok: true, version: VERSION, mode: 'rules', corpusSize: SEED.corpus.length, threshold: MIN_SCORE, k: K, maxRounds: MAX_ROUNDS, features: ['evidence-anchors', 'bad-model-simulation', 'reactive-params', 'missed-call-callback'], paramBounds: PARAM_BOUNDS, extraDocsBounds: { maxDocs: EXTRA_MAX_DOCS, titleMax: EXTRA_TITLE_MAX, urlMax: EXTRA_URL_MAX, contentMax: EXTRA_CONTENT_MAX }, time: new Date().toISOString() });
       if (tool === 'corpus') return json(200, { ok: true, source: CORPUS_SOURCE, docs: SEED.corpus });
       if (tool === 'quiz') return json(200, { ok: true, quiz: SEED.quiz });
       if (tool === 'plan') return json(200, { ok: true, plan: SEED.plan, source: '规则版规划（与本地零 Key 样例同源）' });
@@ -575,8 +626,8 @@ export async function handleLearningAgent({ request, env }) {
     const b = await body(request);
     if (tool === 'profile') return json(200, { ok: true, profile: buildProfile(b) });
     if (tool === 'plan') return json(200, { ok: true, plan: SEED.plan, source: '规则版规划（与本地零 Key 样例同源）' });
-    if (tool === 'ask') return json(200, answerQuery(str(b.query, 'query', 200), { simulateBadModel: b.simulateBadModel === true, params: b.params }));
-    if (tool === 'resources') return json(200, buildResources(b, { simulateBadModel: b.simulateBadModel === true, params: b.params }));
+    if (tool === 'ask') return json(200, answerQuery(str(b.query, 'query', 200), { simulateBadModel: b.simulateBadModel === true, params: b.params, extraDocs: b.extraDocs }));
+    if (tool === 'resources') return json(200, buildResources(b, { simulateBadModel: b.simulateBadModel === true, params: b.params, extraDocs: b.extraDocs }));
     if (tool === 'grade') return json(200, gradeQuiz(b.answers));
     if (tool === 'review') return json(200, buildReview(b));
     if (tool === 'tutor') return json(200, await runTutor(b, env));
@@ -586,4 +637,4 @@ export async function handleLearningAgent({ request, env }) {
   }
 }
 
-export { tokenize, MIN_SCORE, K, MAX_ROUNDS, RETRIEVER, PROD_PARAMS, PARAM_BOUNDS };
+export { tokenize, MIN_SCORE, K, MAX_ROUNDS, RETRIEVER, PROD_PARAMS, PARAM_BOUNDS, EXTRA_MAX_DOCS, EXTRA_CONTENT_MAX };

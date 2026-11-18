@@ -143,6 +143,25 @@
  #tangle-verdict{display:block;margin-top:6px;padding:8px 10px;border-radius:8px;background:var(--pri-soft);border:1px dashed #c7d2fe;font-size:13px;line-height:1.7}
  #tangle-verdict.refused{background:var(--bad-soft);border-color:#fecaca;color:#991b1b}
  #tangle-verdict.passed{background:var(--ok-soft);border-color:#bbf7d0;color:#166534}
+ /* ---- 未接来电台账（拒答=未接来电，回拨=补证据重答；听筒仪式纯 CSS，无外部库） ---- */
+ .call-row{display:flex;gap:12px;align-items:flex-start;border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin:8px 0;background:#fafbff}
+ .call-row.answered{background:var(--ok-soft);border-color:#bbf7d0}
+ .call-info{flex:1;min-width:0}
+ .call-q{font-weight:600;font-size:13px;word-break:break-all}
+ .call-meta{font-size:11px;color:var(--sub);font-family:ui-monospace,Consolas,monospace;margin-top:2px}
+ .call-note{font-size:12px;color:var(--sub);margin-top:6px}
+ .call-note a{color:var(--pri);word-break:break-all}
+ .handset{display:inline-flex;align-items:center;gap:6px;margin:0;padding:7px 12px;background:var(--pri);border-radius:999px;font-size:12px;flex:0 0 auto}
+ .handset svg{display:block;transform-origin:70% 70%}
+ .call-row.missed .handset svg{animation:ring 2.6s ease-in-out infinite}
+ .handset.lifting svg{animation:pickup .8s cubic-bezier(.34,1.56,.64,1) forwards}
+ .call-row.answered .handset{background:var(--ok)}
+ @keyframes ring{0%,72%,100%{transform:rotate(0)}76%{transform:rotate(-14deg)}80%{transform:rotate(12deg)}84%{transform:rotate(-10deg)}88%{transform:rotate(8deg)}92%{transform:rotate(0)}}
+ @keyframes pickup{0%{transform:rotate(0) translateY(0)}45%{transform:rotate(-38deg) translateY(-4px)}100%{transform:rotate(-45deg) translateY(-3px)}}
+ .cb-form{border-top:1px dashed var(--line);margin-top:8px;padding-top:4px}
+ .cb-form label{margin:6px 0 2px;font-size:12px}
+ .cb-form textarea{min-height:80px}
+ .cb-form button{margin:8px 8px 0 0;padding:6px 14px;font-size:12px}
 </style>
 </head>
 <body>
@@ -151,9 +170,9 @@
     <div class="hero-top">
       <div>
         <span class="hbadge">2026 Qoder 高校创造力大赛 · StudyHack 主参赛作品</span>
-        <span class="hbadge">公网演示 v1.2 · 无 Key 规则兜底</span>
+        <span class="hbadge">公网演示 v1.2.1 · 无 Key 规则兜底</span>
         <h1>学习闭环 Agent<span class="ver">防幻觉不是叮嘱模型，是代码层硬约束——这一页让你亲眼看到、亲手验证</span></h1>
-        <p class="hero-sub">首屏即工具：直接提问，看 BM25 全量打分、阈值过滤、代码级拒答与字符级证据锚点。论文里的参数数字可以直接拖动（Tangle 式反应式文档），全文结论随拖动联动重算。打开右上「坏模型」开关，把模型换成永远编造的坏模型，约束依然成立。</p>
+        <p class="hero-sub">首屏即工具：直接提问，看 BM25 全量打分、阈值过滤、代码级拒答与字符级证据锚点。论文里的参数数字可以直接拖动（Tangle 式反应式文档），全文结论随拖动联动重算。打开右上「坏模型」开关，把模型换成永远编造的坏模型，约束依然成立。每次拒答还会记入「未接来电」台账——拿起听筒回拨、补一条本地语料，亲历拒答翻转为回答。</p>
       </div>
       <label class="switch-wrap" for="bad-model" title="注入一个永远编造的坏模型：阈值 / 拒答 / 白名单 / 引用强制照常执行">
         <span class="switch"><input type="checkbox" id="bad-model" onchange="onBadToggle()"><i></i></span>
@@ -206,9 +225,16 @@
   <div id="ask-out"></div>
 </section>
 
+<section class="card" id="sec-calls">
+  <h2><span class="stepno">✆</span>未接来电 · 拒答台账 <span class="pill info">拒答不是终点，是待补的证据</span></h2>
+  <p class="desc">每次代码级拒答都会在这里记一条「未接来电」：时间 / 查询 / 最高分 / 当时阈值（仅存你的浏览器 localStorage，滚动保留 20 条）。拿起听筒「回拨」= 补一条本地演示语料后重问：命中则拒答翻转为回答，证据锚点 [n] 直指你补的语料并标「本地补充语料（演示）」徽章；仍未命中则如实更新该来电最高分，继续等下一通。补充语料仅并入本轮 BM25 检索（IDF/avgdl 按并入后重算），不进入生产知识库。</p>
+  <div id="calls-out"></div>
+  <div class="small" id="calls-empty">暂无未接来电。去上方问一个语料外话题（例如「摩托车发动机化油器怎么清洗」），看它入列。</div>
+</section>
+
 <details class="tip-d">
   <summary><b>公网版说明</b>（无状态演示 · 与本地完整版同源同参数 · 点击展开）</summary>
-  <p style="margin:8px 0 4px">学情只存在你浏览器的 localStorage 里，随请求传入、服务端不落库；检索/阈值/拒答/白名单/规划/题库/辅导规则与本地完整版<b>同源同参数</b>（BM25 bigram 分词、阈值 2.0、top-k 4、ReAct 4 轮上限）。v1.2 新增 Tangle 式反应式参数：首屏论文里的 k1/b/ε/阈值/top-k 可拖拽实验（服务端严格边界校验，越界 400），<b>不拖动 = 生产参数，对拍口径不变</b>；偏离生产值时显示「实验参数」徽章，一键复位。完整的 LangGraph 8 节点编排、SQLite 跨会话记忆与真实 LLM 调用在本地完整版；本页无模型 Key，全部走规则兜底，绝不编造。「模拟坏模型」开关注入的是一个故意永远编造的演示模型，用来证明约束不依赖模型自觉——实验参数下同样成立。</p>
+  <p style="margin:8px 0 4px">学情只存在你浏览器的 localStorage 里，随请求传入、服务端不落库；检索/阈值/拒答/白名单/规划/题库/辅导规则与本地完整版<b>同源同参数</b>（BM25 bigram 分词、阈值 2.0、top-k 4、ReAct 4 轮上限）。v1.2 新增 Tangle 式反应式参数：首屏论文里的 k1/b/ε/阈值/top-k 可拖拽实验（服务端严格边界校验，越界 400），<b>不拖动 = 生产参数，对拍口径不变</b>；偏离生产值时显示「实验参数」徽章，一键复位。v1.2.1 新增「未接来电」台账：每次代码级拒答自动入列（localStorage 滚动 20 条），点听筒「回拨」补一条本地演示语料（extraDocs ≤5 条、正文 ≤2000 字，服务端严格校验越界 400）后重问——补充语料并入本轮 BM25 检索（IDF/avgdl 按并入后重算）、url 同步进白名单，命中即翻转为回答并标「本地补充语料（演示）」徽章；不传 extraDocs = 生产口径，对拍不变。完整的 LangGraph 8 节点编排、SQLite 跨会话记忆与真实 LLM 调用在本地完整版；本页无模型 Key，全部走规则兜底，绝不编造。「模拟坏模型」开关注入的是一个故意永远编造的演示模型，用来证明约束不依赖模型自觉——实验参数与回拨补语料下同样成立。</p>
 </details>
 
 <details class="card drawer" id="sec-profile">
@@ -272,8 +298,8 @@
 </section>
 
 <footer>
-  学习闭环 Agent · python-learning-agent 公网演示版 v1.2 · FastAPI + LangGraph 多智能体系统的同源规则子集 ·
-  检索参数与拒答判据与后端 163 项 pytest + 60 项 node 对拍测试同口径 · 本页不收集任何个人信息，学情仅存于你的浏览器。
+  学习闭环 Agent · python-learning-agent 公网演示版 v1.2.1 · FastAPI + LangGraph 多智能体系统的同源规则子集 ·
+  检索参数与拒答判据与后端 163 项 pytest + 73 项 node 对拍测试同口径 · 本页不收集任何个人信息，学情与未接来电台账仅存于你的浏览器。
 </footer>
 </div>
 
@@ -297,7 +323,86 @@ let profile=load('la_profile',null);
 let prevSnapshot=load('la_snapshot',null);
 let historyCount=load('la_history',0);
 let plan=null,quiz=null,quizResult=null,review=null;
-const evStore={ask:[],res:[]};   // 证据锚点数据源：当前回答命中 / 当前放行资源
+const evStore={ask:[],res:[]};   // 证据锚点数据源：当前回答命中 / 当前放行资源 / 各回拨命中（'call'+id）
+
+/* ---- 未接来电台账：拒答自动入列（localStorage 滚动 ≤20），回拨 = 补一条本地演示语料后重答 ---- */
+const CALLS_MAX=20;
+let calls=load('la_calls',[]);
+if(!Array.isArray(calls))calls=[];
+const callAnswers={};   // 本会话已接通的回答：id → 渲染 HTML（证据数据在 evStore['call'+id]）
+const saveCalls=()=>save('la_calls',calls.slice(0,CALLS_MAX));
+const nowStr=()=>new Date().toLocaleString('zh-CN',{hour12:false});
+function recordMissedCall(j){
+ const maxScore=j.scores.length?j.scores[0].score:0;
+ const top=calls[0];
+ // 同一查询的连续拒答（含 Tangle 拖动联动）只更新队首那条，不刷屏；已接通的再拒答则记新来电
+ if(top&&top.q===j.query&&top.status!=='answered'){top.maxScore=maxScore;top.threshold=j.threshold;top.time=nowStr()}
+ else calls.unshift({id:Date.now().toString(36)+Math.random().toString(36).slice(2,6),q:j.query,maxScore,threshold:j.threshold,time:nowStr(),status:'missed',doc:null});
+ calls=calls.slice(0,CALLS_MAX);saveCalls();renderCalls();
+}
+const HANDSET_SVG='<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M6.62 10.79a15.05 15.05 0 0 0 6.59 6.59l2.2-2.2a1 1 0 0 1 1.02-.24c1.12.37 2.33.57 3.57.57a1 1 0 0 1 1 1V20a1 1 0 0 1-1 1C10.61 21 3 13.39 3 4a1 1 0 0 1 1-1h3.5a1 1 0 0 1 1 1c0 1.24.2 2.45.57 3.57a1 1 0 0 1-.25 1.02l-2.2 2.2z"/></svg>';
+function renderCalls(){
+ // 重渲染前保留正在填写的回拨表单草稿（Tangle 联动重算可能触发重渲染）
+ const draft={};
+ for(const c of calls){const f=el('cb-form-'+c.id);if(f&&!f.hidden)draft[c.id]={t:el('cb-title-'+c.id).value,u:el('cb-url-'+c.id).value,c:el('cb-content-'+c.id).value}}
+ el('calls-empty').hidden=calls.length>0;
+ el('calls-out').innerHTML=calls.map(c=>{
+  const answered=c.status==='answered';
+  return `<div class="call-row ${answered?'answered':'missed'}" id="call-${c.id}">
+   <button class="handset" onclick="openCallback('${c.id}')" aria-label="回拨：补一条本地语料后重答" title="拿起听筒回拨（补证据重答）">${HANDSET_SVG}<span>${answered?'再拨一次':'回拨'}</span></button>
+   <div class="call-info">
+    <div class="call-q">${esc(c.q)} ${answered?'<span class="pill ok">已接通 · 证据已补齐</span>':'<span class="pill bad">未接 · 代码级拒答</span>'}</div>
+    <div class="call-meta">最高分 ${Number(c.maxScore).toFixed(4)} / 当时阈值 ${c.threshold} · ${esc(c.time)}</div>
+    ${c.doc?`<div class="call-note">补充语料：<b>${esc(c.doc.title)}</b> <span class="pill warn">本地补充语料（演示）</span><br><a href="${esc(c.doc.url)}" target="_blank" rel="noopener">${esc(c.doc.url)}</a></div>`:''}
+    <div class="cb-form" id="cb-form-${c.id}" hidden>
+     <label>语料标题（≤120 字）</label><input id="cb-title-${c.id}" maxlength="120" placeholder="例如：化油器清洗速查">
+     <label>来源 URL（http/https，≤300 字符）</label><input id="cb-url-${c.id}" maxlength="300" placeholder="https://example.com/carb-clean">
+     <label>正文（≤2000 字，将并入本轮 BM25 检索）</label><textarea id="cb-content-${c.id}" maxlength="2000" placeholder="写与查询同主题的真实材料，越贴题 BM25 分越高。"></textarea>
+     <button onclick="doCallback('${c.id}')">拿起听筒 · 补证据重答</button>
+     <button class="ghost" onclick="closeCallback('${c.id}')">挂断</button>
+     <span class="err" id="cb-err-${c.id}"></span>
+    </div>
+    <div id="cb-out-${c.id}">${callAnswers[c.id]||''}</div>
+   </div></div>`;
+ }).join('');
+ for(const[id,d]of Object.entries(draft)){const f=el('cb-form-'+id);if(f){f.hidden=false;el('cb-title-'+id).value=d.t;el('cb-url-'+id).value=d.u;el('cb-content-'+id).value=d.c}}
+}
+function openCallback(id){
+ const row=el('call-'+id);if(!row)return;
+ const btn=row.querySelector('.handset');
+ btn.classList.remove('lifting');void btn.offsetWidth;btn.classList.add('lifting'); // 拿起听筒动画（纯 CSS）
+ setTimeout(()=>btn.classList.remove('lifting'),900);
+ el('cb-form-'+id).hidden=false;
+ el('cb-title-'+id).focus();
+}
+function closeCallback(id){el('cb-form-'+id).hidden=true}
+async function doCallback(id){
+ const c=calls.find(x=>x.id===id);if(!c)return;
+ const errEl=el('cb-err-'+id);errEl.textContent='';
+ const doc={title:el('cb-title-'+id).value.trim(),url:el('cb-url-'+id).value.trim(),content:el('cb-content-'+id).value.trim()};
+ if(!doc.title||!doc.url||!doc.content){errEl.textContent='标题 / URL / 正文都要填';return}
+ const out=el('cb-out-'+id);
+ out.innerHTML='<span class="small">回拨中：补充语料已并入本轮检索…</span>';
+ try{
+  const j=await post('ask',{query:c.q,simulateBadModel:badOn(),extraDocs:[doc],...expBody()});
+  c.maxScore=j.scores.length?j.scores[0].score:0;
+  c.threshold=j.threshold;c.time=nowStr();
+  if(j.refused){
+   // 未命中：仍拒答，如实更新该来电最高分，表单保留草稿可继续补
+   c.status='missed';saveCalls();renderCalls();
+   el('cb-form-'+id).hidden=false;
+   el('cb-title-'+id).value=doc.title;el('cb-url-'+id).value=doc.url;el('cb-content-'+id).value=doc.content;
+   el('cb-out-'+id).innerHTML=`<div class="refuse"><b>回拨仍未接通：</b>${esc(j.reason)}<br><span class="pill bad">refused: true</span><span class="pill bad">modelCalled: false</span><span class="pill warn">该来电最高分已更新为 ${c.maxScore.toFixed(4)}</span><div class="call-note">补充语料与查询的相关性仍不足（BM25 ≤ 阈值）。换更贴题的正文再拨，或拖动上方论文里的阈值做实验。</div></div>`;
+  }else{
+   // 命中：拒答翻转为回答，证据锚点指向新语料（local 徽章），白名单/坏模型闸照常
+   c.status='answered';c.doc=doc;saveCalls();
+   evStore['call'+id]=j.hits;
+   callAnswers[id]=`<div class="kv" style="margin-top:8px"><span class="pill ok">回拨接通 · 拒答翻转为回答</span><span class="pill ok">命中 ${j.hits.length} 条（top-k=${j.k}，分数 &gt; ${j.threshold}）</span>${j.hits.some(h=>h.local)?'<span class="pill warn">本地补充语料（演示）</span>':''}${j.mode==='bad-model'?`<span class="pill bad">坏模型输出被引用强制闸过滤（拦 ${j.blocked} 条）</span>`:''}${isExp()?'<span class="pill warn">实验参数生效中</span>':''}<span class="pill info">点击 [n] 查看原文证据</span></div>
+    <div class="answer">${cites(j.answer,j.hits.length,'call'+id)}</div>${hitsHtml(j.hits,'call'+id)}`;
+   renderCalls();
+  }
+ }catch(e){out.innerHTML='';errEl.textContent=e.message}
+}
 
 /* ---- Tangle 式反应式参数：prose 数字可拖拽/键盘步进，150ms 防抖联动全文 ---- */
 const PROD={k1:1.5,b:0.75,eps:0.25,threshold:2.0,k:4};
@@ -419,10 +524,10 @@ function openEvidence(kind,i){
  const d=evStore[kind][i];if(!d)return;
  el('ev-no').textContent=`[${i+1}]`;
  el('ev-title').textContent=d.title;
- el('ev-meta').innerHTML=`<span class="pill info">${esc(d.type||'doc')}</span>${typeof d.score==='number'?`<span class="pill ok">BM25 ${d.score.toFixed(4)}</span>`:''}<span class="pill ok">白名单内 · 可溯源</span>`;
+ el('ev-meta').innerHTML=`<span class="pill info">${esc(d.type||'doc')}</span>${typeof d.score==='number'?`<span class="pill ok">BM25 ${d.score.toFixed(4)}</span>`:''}${d.local?'<span class="pill warn">本地补充语料（演示）</span>':'<span class="pill ok">白名单内 · 可溯源</span>'}`;
  el('ev-url').href=d.url;el('ev-url').textContent=d.url;
  el('ev-body').innerHTML=marksHtml(d.content,d.marks,0,d.content.length);
- el('ev-foot').textContent=`证据窗口：字符 ${d.offset.start}–${d.offset.end} / 全文 ${d.content.length}；高亮 ${(d.marks||[]).length} 处命中 bigram。原文逐字来自课程知识库，未做任何改写。`;
+ el('ev-foot').textContent=`证据窗口：字符 ${d.offset.start}–${d.offset.end} / 全文 ${d.content.length}；高亮 ${(d.marks||[]).length} 处命中 bigram。`+(d.local?'原文逐字来自你本次回拨补充的本地演示语料，仅并入本轮检索（IDF/avgdl 按并入后重算），未进入生产知识库。':'原文逐字来自课程知识库，未做任何改写。');
  el('ev-panel').classList.add('show');el('ev-panel').setAttribute('aria-hidden','false');
  el('ev-backdrop').classList.add('show');
  const first=el('ev-body').querySelector('mark');
@@ -448,7 +553,7 @@ function animateBars(box){
 function hitsHtml(hits,kind){
  return hits.map((h,i)=>`<div class="hit" onclick="openEvidence('${kind}',${i})" title="点击查看语料原文与命中高亮">
   <button class="cite" onclick="event.stopPropagation();openEvidence('${kind}',${i})">[${i+1}]</button>
-  <b>${esc(h.title)}</b> ${typeof h.score==='number'?`<span class="pill ok">score ${h.score.toFixed(4)}</span>`:''}
+  <b>${esc(h.title)}</b> ${typeof h.score==='number'?`<span class="pill ok">score ${h.score.toFixed(4)}</span>`:''}${h.local?'<span class="pill warn">本地补充语料（演示）</span>':''}
   <a href="${esc(h.url)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">${esc(h.url)}</a>
   <div class="excerpt">${excerptHtml(h)}</div></div>`).join('');
 }
@@ -467,7 +572,8 @@ async function doAsk(silent){
   evStore.ask=j.hits;
   const table=scoreTable(j);
   if(j.refused){
-   box.innerHTML=`<div class="refuse"><b>我拒答了：</b>${esc(j.reason)}<br><span class="pill bad">refused: true</span><span class="pill bad">modelCalled: false</span>${isExp()?'<span class="pill warn">实验参数生效中</span>':''}${j.simulateBadModel?'<span class="pill bad">坏模型同样一次都没被调用</span>':''}<div style="margin-top:6px">${esc(j.answer)}</div></div>${table}`;
+   box.innerHTML=`<div class="refuse"><b>我拒答了：</b>${esc(j.reason)}<br><span class="pill bad">refused: true</span><span class="pill bad">modelCalled: false</span>${isExp()?'<span class="pill warn">实验参数生效中</span>':''}${j.simulateBadModel?'<span class="pill bad">坏模型同样一次都没被调用</span>':''}<div style="margin-top:6px">${esc(j.answer)}</div><div class="call-note">✆ 已记入「未接来电」台账——拒答不是终点，是待补的证据。<a href="#sec-calls" onclick="gotoSec('sec-calls');return false">拿起听筒去回拨</a></div></div>${table}`;
+   recordMissedCall(j);
   }else if(j.mode==='bad-model'){
    const blockedTexts=new Set(j.blockedItems.map(b=>b.text));
    const rawLines=j.rawAnswer.split('\n').filter(l=>l.trim()).map(l=>{
@@ -598,7 +704,7 @@ async function doTutor(){
 
 /* ---- 初始化 ---- */
 (async()=>{
- memState();
+ memState();renderCalls();
  if(profile){
   el('f-intro').value='';el('f-goal').value=profile.learningGoal.details||'';el('f-weak').value=profile.weakPoints.details==='暂未识别出明确薄弱点'?'':profile.weakPoints.details;
   el('f-base').value=profile.knowledgeBase.level;el('f-hours').value=(profile.studyTime.details.match(/\d+/)||[10])[0];
